@@ -5,8 +5,6 @@
 #ifndef _TRACKER_PROTOCOL_H
 #define _TRACKER_PROTOCOL_H
 
-#include <sys/socket.h>
-#include <netdb.h>
 #include <cstring>
 #include <string>
 #include <iostream>
@@ -22,37 +20,6 @@ namespace TrackerProtocol {
 	const int HTTP_HEADER_MAX_SIZE = 10 * 1024; // set an arbitrary maximum size for an HTTP header from tracker
 	const int HTTP_MAX_SIZE = 10 * 1024; // set an arbitrary maximum size for an HTTP message from tracker
 	const int HTTP_OK = 200; // status code for HTTP OK
-
-	// Wrapper struct for sockaddr_in that is 
-	// indifferent to dictionary mode vs binary mode peer formats
-	struct PeerAddr { 
-		std::string peer_id = "";
-		sockaddr_in sockaddr; 
-		
-		// dictionary mode
-		// assumes non network byte order for port! (bittorrent protocol does not specify)
-		PeerAddr(std::string pid, std::string ip_addr, int p) {
-			inet_pton(AF_INET, ip_addr.c_str(), &(sockaddr.sin_addr));
-			sockaddr.sin_port = htons(p); 
-		}
-			
-		// binary mode, assumes that the args are passed
-		// in network byte order!
-		PeerAddr(uint32_t ip_addr, uint16_t p) {
-			sockaddr.sin_family = AF_INET;
-			sockaddr.sin_port = p; 
-			sockaddr.sin_addr.s_addr = ntohl(ip_addr); // in host order!
-		}
-		
-		// get std::string representation of sockaddr
-		std::string str() {
-			char str[INET_ADDRSTRLEN]; 
-			inet_ntop(AF_INET, &(sockaddr.sin_addr), str, INET_ADDRSTRLEN); 
-
-			std::string output = "peer ip addr: "+ std::string(str) + " port: " + std::to_string(ntohs(sockaddr.sin_port)); 
-			return output;
-		}
-	};
 
 	// get the tracker address struct given the announce url of the tracker
 	// the announce url looks something like this: 
@@ -141,6 +108,7 @@ namespace TrackerProtocol {
 		// fields for sending to tracker
 		std::string announce_url; // the announce url from the metainfo file
 		int socket; 		 // the socket we are using to communicate with the tracker, bound at port 
+		
 
 		TrackerRequest(std::string ann_url, int sock) {
 			announce_url = ann_url;
@@ -214,7 +182,7 @@ namespace TrackerProtocol {
 		// Pack all headers into a std::string, transmit the HTTP request with TCP
 		void send_http() {
 			std::string http_req = construct_http_string();
-			int length = http_req.length();
+			uint32_t length = http_req.length();
 			assert(ProtocolUtils::sendall(socket, http_req.c_str(), &length) == 0); 
 		}
 	};
@@ -233,7 +201,7 @@ namespace TrackerProtocol {
 		int num_seeders;  // number of clients with entire file 
 		int num_leechers;  // number of clients who arent seeders
 		
-		std::vector<PeerAddr> peers; // peers we got from this response
+		std::vector<ProtocolUtils::Peer> peers; // peers we got from this response
 
 		TrackerResponse(int sock) { 
 			socket = sock;
@@ -322,7 +290,7 @@ namespace TrackerProtocol {
 							memcpy(&ip_addr, block, sizeof(uint32_t));
 							memcpy(&port, block + sizeof(uint32_t), sizeof(uint16_t)); 
 							
-							PeerAddr peer(ip_addr, port); 
+							ProtocolUtils::Peer peer(ip_addr, port); 
 							peers.push_back(peer); 
 						}
 					}
@@ -335,15 +303,13 @@ namespace TrackerProtocol {
 							std::string ip = std::get<std::string>(peer_dict["ip"]); 
 							int port = std::get<long long>(peer_dict["port"]);
 							
-							PeerAddr peer(peer_id, ip, port); 
+							ProtocolUtils::Peer peer(peer_id, ip, port); 
 							peers.push_back(peer);
 						}
 					}
 				}, resp_dict["peers"].base());
 			}
-
 		}
-
 	};
 }
 
