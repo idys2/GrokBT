@@ -1,5 +1,5 @@
 # BitTorrent
-This is a C++ implementation of a CLI bit torrent
+This is a C++ implementation of a CLI bit torrent. 
 
 
 ## File Structure

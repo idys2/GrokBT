@@ -1,0 +1,5 @@
+include/crypto/** linguist-vendored
+include/curl/** linguist-vendored
+include/internal/** linguist-vendored
+include/openssl/** linguist-vendored
+
