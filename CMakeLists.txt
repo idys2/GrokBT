@@ -11,7 +11,6 @@ if(POLICY CMP0144)
 endif()
 
 # find libcurl and openssl
-# Function to add external project
 function(add_external_project NAME URL MD5 PREFIX CONFIGURE_COMMAND BUILD_COMMAND INSTALL_COMMAND)
     include(ExternalProject)
     ExternalProject_Add(${NAME}
@@ -110,21 +109,6 @@ else()
     endif()
 endif()
 
-# find bencode and argparse
-
-include(FetchContent)
-FetchContent_Declare(
-  bencode
-  GIT_REPOSITORY https://github.com/jimporter/bencode.hpp.git
-)
-
-FetchContent_Declare(
-  argparse
-  GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-)
-
-FetchContent_MakeAvailable(argparse bencode)
-
 # compile hash as its own library
 add_subdirectory(hash)
 
@@ -137,5 +121,6 @@ target_include_directories(client PUBLIC
 
 set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(client PRIVATE ${INCLUDE_DIR})
+
 target_link_libraries(client PRIVATE CURL::libcurl OpenSSL::SSL)
 target_link_libraries(client PUBLIC hash)
