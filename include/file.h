@@ -65,6 +65,7 @@ namespace Torrent {
         std::string file_name; 	
         std::vector<FilePiece> piece_vec;  
         BitField piece_bitfield;
+        
         File();
 
         File(long long piece_length, std::string pieces, std::string fname, long long length, long long block_length);
