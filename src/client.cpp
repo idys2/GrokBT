@@ -1,4 +1,5 @@
 #include "client.h"
+#include <argparse/argparse.hpp>
 
 std::string Client::unique_peer_id(std::string client_id) {
     assert(client_id.length() == 6);
@@ -70,6 +71,28 @@ std::string Client::hash_info_dict_str(std::string info_dict_str) {
 }   
 
 int main(int argc, char* argv[]) {
+    argparse::ArgumentParser program("client");
+
+    std::string torrent_file;
+    std::string client_id;
+    int port;
+
+    program.add_argument("-f").default_value("debian1.torrent").store_into(torrent_file);
+    program.add_argument("-id").default_value("EZ6969").store_into(client_id);
+    program.add_argument("-p").default_value(6881).store_into(port);
+    try {
+        program.parse_args(argc, argv);
+    }
+    catch (const std::exception& err) {
+        std::cerr << err.what() << std::endl;
+        std::cerr << program;
+        std::exit(1);
+    }
+
+    std::cout << torrent_file << std::endl;
+    std::cout << client_id << std::endl;
+    std::cout << port << std::endl;
+
     return 0;
 }
 

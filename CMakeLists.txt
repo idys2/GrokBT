@@ -109,6 +109,21 @@ else()
     endif()
 endif()
 
+# find bencode and argparse
+
+include(FetchContent)
+FetchContent_Declare(
+  bencode
+  GIT_REPOSITORY https://github.com/jimporter/bencode.hpp.git
+)
+
+FetchContent_Declare(
+  argparse
+  GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+)
+
+FetchContent_MakeAvailable(argparse bencode)
+
 # compile hash as its own library
 add_subdirectory(hash)
 
@@ -121,6 +136,8 @@ target_include_directories(client PUBLIC
 
 set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(client PRIVATE ${INCLUDE_DIR})
+target_include_directories(client PRIVATE ${argparse_SOURCE_DIR} ${argparse_SOURCE_DIR}/include/)
+target_include_directories(client PRIVATE ${bencode_SOURCE_DIR} ${bencode_SOURCE_DIR}/include/)
 
 target_link_libraries(client PRIVATE CURL::libcurl OpenSSL::SSL)
 target_link_libraries(client PUBLIC hash)
