@@ -6,6 +6,7 @@
 
 #include "bencode.hpp"
 #include "peer.h"
+#include "tcp_utils.h"
 
 namespace TrackerProtocol {
     const int HTTP_HEADER_MAX_SIZE = 10 * 1024; // set an arbitrary maximum size for an HTTP header from tracker
@@ -30,16 +31,17 @@ namespace TrackerProtocol {
 
 		std::string info_hash; 	// urlencoded 20 byte SHA1 hash of bencoded dictionary
 		std::string peer_id; 	// urlencoded 20 byte std::string used as unique ID for client
-		int port; 			// port number that the client is listening on, must be between 6881-6889
 		std::string uploaded; 	// total amount uploaded since client sent start event to tracker in base 10 ascii
 		std::string downloaded;  // total amount downloaded since client sent start event to tracker in base 10 ascii
 		std::string left;		// number of bytes remaining to download in base 10 ascii
+
+		int port; 			// port number that the client is listening on, must be between 6881-6889
 		int compact;		// whether or not the client accepts a "compact" response, 0 or 1
 		int no_peer_id; 	// indicates tracker can omit peer id field in peers dict (ignored if compact=true), 0 or 1
-		EventType event; 	
+		EventType event; 	// the type of event we are sending to the tracker
 
-		std::string announce_url; 
-		int socket; 		
+		std::string announce_url; // the announce url for this tracker request
+		int socket; 			  // the socket to send on
 		
 		TrackerRequest(std::string ann_url, int sock);
 

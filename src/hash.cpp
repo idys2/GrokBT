@@ -8,7 +8,6 @@
 
 /* You shouldn't have to be looking at this file, but have fun! */
 
-
 struct sha1sum_ctx {
 	EVP_MD_CTX *ctx;
 	const EVP_MD *md;

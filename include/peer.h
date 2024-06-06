@@ -1,5 +1,5 @@
-#ifndef PARSER_H
-#define PARSER_H
+#ifndef PEER_H
+#define PEER_H
 
 #include <string>
 #include <sys/socket.h>
@@ -20,9 +20,11 @@ namespace Peer {
         std::string peer_id;
         sockaddr_in sockaddr;
 
-        Peer(std::string peer_id_str, std::string ip_addr, int port);
+        PeerClient(std::string peer_id_str, std::string ip_addr, int port);
             
-        Peer(uint32_t ip_addr, uint16_t port);
+        PeerClient(uint32_t ip_addr, uint16_t port);
+
+        std::string to_string();
     };
 }
 

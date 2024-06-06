@@ -111,20 +111,17 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(argparse bencode)
 
-# compile hash as its own library
-add_subdirectory(hash)
+add_library(TorrentModule 
+            src/client.cpp 
+            src/hash.cpp 
+            src/tracker_protocol.cpp
+            src/tcp_utils.cpp
+            src/peer.cpp
+            )
+target_link_libraries(TorrentModule CURL::libcurl OpenSSL::SSL)
+target_include_directories(TorrentModule PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(TorrentModule PUBLIC ${argparse_SOURCE_DIR} ${argparse_SOURCE_DIR}/include/)
+target_include_directories(TorrentModule PUBLIC ${bencode_SOURCE_DIR} ${bencode_SOURCE_DIR}/include/)
 
-add_executable(client src/client.cpp)
-
-target_include_directories(client PUBLIC
-                          "${PROJECT_BINARY_DIR}"
-                          "${PROJECT_SOURCE_DIR}/hash"
-                          )
-
-set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
-target_include_directories(client PRIVATE ${INCLUDE_DIR})
-target_include_directories(client PRIVATE ${argparse_SOURCE_DIR} ${argparse_SOURCE_DIR}/include/)
-target_include_directories(client PRIVATE ${bencode_SOURCE_DIR} ${bencode_SOURCE_DIR}/include/)
-
-target_link_libraries(client PRIVATE CURL::libcurl OpenSSL::SSL)
-target_link_libraries(client PUBLIC hash)
+add_executable(torrent src/main.cpp)
+target_link_libraries(torrent TorrentModule)
