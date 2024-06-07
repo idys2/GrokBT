@@ -1,104 +1,34 @@
 cmake_minimum_required(VERSION 3.14)
+include(FetchContent)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 project(newBT)
 
-set(LIBCURL_ROOT ${CMAKE_SOURCE_DIR}/libcurl)
-set(OPENSSL_ROOT ${CMAKE_SOURCE_DIR}/openssl)
+# find libcurl and openssl
 
-if(POLICY CMP0144)
-    cmake_policy(SET CMP0144 NEW)
+find_package(CURL QUIET)
+if(NOT CURL_FOUND)
+    message("Curl not found, fetching...")
+    FetchContent_Declare(
+        CURL
+        GIT_REPOSITORY https://github.com/curl/curl.git
+    )
+    FetchContent_MakeAvailable(CURL)
+
 endif()
 
-if(EXISTS ${LIBCURL_ROOT}/install)
-    set(CURL_INCLUDE_DIRS ${LIBCURL_ROOT}/install/include)
-    set(CURL_LIBRARIES ${LIBCURL_ROOT}/install/lib/libcurl.a)
-    if(NOT TARGET CURL::libcurl)
-        add_library(CURL::libcurl INTERFACE IMPORTED)
-        set_target_properties(CURL::libcurl PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIRS}"
-            INTERFACE_LINK_LIBRARIES "${CURL_LIBRARIES}"
-        )
-    endif()
-else()
-    find_package(CURL QUIET)
-    if(NOT CURL_FOUND)
-        message(STATUS "libcurl not found, installing...")
-
-        ExternalProject_Add(libcurl_project
-            GIT_REPOSITORY https://github.com/curl/curl.git
-            PREFIX ${LIBCURL_ROOT}
-            CONFIGURE_COMMAND "./configure --prefix=${LIBCURL_ROOT}/install"
-            BUILD_COMMAND "make"
-            INSTALL_COMMAND "make install"
-        )
-
-        set(CURL_INCLUDE_DIRS ${LIBCURL_ROOT}/install/include)
-        set(CURL_LIBRARIES ${LIBCURL_ROOT}/install/lib/libcurl.a)
-        if(NOT TARGET CURL::libcurl)
-            add_library(CURL::libcurl INTERFACE IMPORTED)
-            set_target_properties(CURL::libcurl PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${CURL_LIBRARIES}"
-            )
-        endif()
-    else()
-        message(STATUS "libcurl found.")
-        if(NOT TARGET CURL::libcurl)
-            add_library(CURL::libcurl INTERFACE IMPORTED)
-            set_target_properties(CURL::libcurl PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${CURL_LIBRARIES}"
-            )
-        endif()
-    endif()
-endif()
-
-if(EXISTS ${OPENSSL_ROOT}/install)
-    set(OPENSSL_INCLUDE_DIRS ${OPENSSL_ROOT}/install/include)
-    set(OPENSSL_LIBRARIES ${OPENSSL_ROOT}/install/lib/libssl.a;${OPENSSL_ROOT}/install/lib/libcrypto.a)
-    if(NOT TARGET OpenSSL::SSL)
-        add_library(OpenSSL::SSL INTERFACE IMPORTED)
-        set_target_properties(OpenSSL::SSL PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIRS}"
-            INTERFACE_LINK_LIBRARIES "${OPENSSL_LIBRARIES}"
-        )
-    endif()
-else()
-    find_package(OpenSSL QUIET)
-    if(NOT OPENSSL_FOUND)
-        message(STATUS "OpenSSL not found, installing...")
-        ExternalProject_Add(openssl_project
-            GIT_REPOSITORY https://github.com/openssl/openssl.git
-            PREFIX ${OPENSSL_ROOT}
-            CONFIGURE_COMMAND "./config --prefix=${OPENSSL_ROOT}/install"
-            BUILD_COMMAND "make"
-            INSTALL_COMMAND "make install"
-        )
-        set(OPENSSL_INCLUDE_DIRS ${OPENSSL_ROOT}/install/include)
-        set(OPENSSL_LIBRARIES ${OPENSSL_ROOT}/install/lib/libssl.a;${OPENSSL_ROOT}/install/lib/libcrypto.a)
-        if(NOT TARGET OpenSSL::SSL)
-            add_library(OpenSSL::SSL INTERFACE IMPORTED)
-            set_target_properties(OpenSSL::SSL PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${OPENSSL_LIBRARIES}"
-            )
-        endif()
-    else()
-        message(STATUS "OpenSSL found.")
-        if(NOT TARGET OpenSSL::SSL)
-            add_library(OpenSSL::SSL INTERFACE IMPORTED)
-            set_target_properties(OpenSSL::SSL PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${OPENSSL_LIBRARIES}"
-            )
-        endif()
-    endif()
+find_package(OpenSSL QUIET)
+if(NOT OPENSSL_FOUND)
+    message("OpenSSL not found, fetching...")
+    FetchContent_Declare(
+        OPENSSL
+        GIT_REPOSITORY https://github.com/openssl/openssl.git
+    )
+    FetchContent_MakeAvailable(OpenSSL)
 endif()
 
 # find bencode and argparse
 
-include(FetchContent)
 FetchContent_Declare(
   bencode
   GIT_REPOSITORY https://github.com/jimporter/bencode.hpp.git
@@ -118,10 +48,31 @@ add_library(TorrentModule
             src/tcp_utils.cpp
             src/peer.cpp
             )
+
+# set target libcurl and openssl
+if(NOT TARGET CURL::libcurl)
+    add_library(CURL::libcurl INTERFACE IMPORTED)
+    set_target_properties(CURL::libcurl PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${CURL_LIBRARIES}"
+    )
+endif()
+
+if(NOT TARGET OpenSSL::SSL)
+    add_library(OpenSSL::SSL INTERFACE IMPORTED)
+    set_target_properties(OPENSSL::SSL PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${OPENSSL_LIBRARIES}"
+    )
+endif()
 target_link_libraries(TorrentModule CURL::libcurl OpenSSL::SSL)
-target_include_directories(TorrentModule PUBLIC ${CMAKE_SOURCE_DIR}/include)
+
+# include all header files
+target_include_directories(TorrentModule PRIVATE ${CURL_SOURCE_DIR} ${CURL_SOURCE_DIR}/include)
+target_include_directories(TorrentModule PRIVATE ${OPENSSL_SOURCE_DIR} ${OPENSSL_SOURCE_DIR}/include)
 target_include_directories(TorrentModule PUBLIC ${argparse_SOURCE_DIR} ${argparse_SOURCE_DIR}/include/)
 target_include_directories(TorrentModule PUBLIC ${bencode_SOURCE_DIR} ${bencode_SOURCE_DIR}/include/)
+target_include_directories(TorrentModule PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 add_executable(torrent src/main.cpp)
 target_link_libraries(torrent TorrentModule)
