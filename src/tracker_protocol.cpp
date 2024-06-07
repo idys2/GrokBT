@@ -67,15 +67,36 @@ std::vector<std::string> TrackerProtocol::split(std::string input, std::string d
     return tokens;
 }
 
-TrackerProtocol::TrackerRequest::TrackerRequest(std::string ann_url, int sock) {
-    announce_url = ann_url;
-    socket = sock;
+TrackerProtocol::TrackerManager::TrackerManager(std::string torrent_file, std::string p_id, int c_port) {
+    // parse metafile and obtain announce url
+    std::string metainfo = Metainfo::read_metainfo(torrent_file);   
+	std::string info_dict = Metainfo::read_info_dict_str(metainfo); 
+
+    // set all fields on creation
+    announce_url = Metainfo::read_announce_url(metainfo);
+	info_hash = Metainfo::hash_info_dict_str(info_dict);
+    peer_id = p_id;
+    client_port = c_port;
+    uploaded = "0";
+    downloaded = "0";
+    left = "0";
+    compact = 1;
+    no_peer_id = 0;
+    event = TrackerProtocol::EventType::STARTED;
+	tracker_addr = TrackerProtocol::get_tracker_addr(announce_url);
+
+    // get socket set up
+    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(sock >= 0);
+
+    int connected = connect(sock, (sockaddr *)&tracker_addr, sizeof(sockaddr_in));
+    assert(connected >= 0);
 }
 
 // Function to craft HTTP GET request using the provided fields
 // manually constructs the HTTP request
 // assumes all fields are defined.
-std::string TrackerProtocol::TrackerRequest::construct_http_string() {
+std::string TrackerProtocol::TrackerManager::construct_http_string() {
     // get the host part of the announce URL
     CURLU *handle = curl_url();
     CURLUcode rc = curl_url_set(handle, CURLUPART_URL, announce_url.c_str(), 0); 
@@ -102,7 +123,7 @@ std::string TrackerProtocol::TrackerRequest::construct_http_string() {
     request += "GET /announce?";
     request += "info_hash=" + std::string(url_encoded_info) + "&"; // urlencoded
     request += "peer_id=" + std::string(url_encoded_peer_id) + "&"; // urlencoded
-    request += "port=" + std::to_string(port) + "&";
+    request += "port=" + std::to_string(client_port) + "&";
     request += "uploaded=" + uploaded + "&";
     request += "downloaded=" + downloaded + "&";
     request += "left=" + left + "&";
@@ -147,17 +168,13 @@ std::string TrackerProtocol::TrackerRequest::construct_http_string() {
 }
 
 // Pack all headers into a std::string, transmit the HTTP request with TCP
-void TrackerProtocol::TrackerRequest::send_http() {
+void TrackerProtocol::TrackerManager::send_http() {
     std::string http_req = construct_http_string();
     uint32_t length = http_req.length();
-    assert(sendall(socket, http_req.c_str(), &length) == 0); 
+    assert(sendall(sock, http_req.c_str(), &length) == 0); 
 }
 
-TrackerProtocol::TrackerResponse::TrackerResponse(int sock) {
-    socket = sock;
-}
-
-void TrackerProtocol::TrackerResponse::recv_http() { 		
+void TrackerProtocol::TrackerManager::recv_http() { 		
     char buffer[HTTP_HEADER_MAX_SIZE];
     int response_code = 0; 
     int payload_length = 0;
@@ -165,9 +182,9 @@ void TrackerProtocol::TrackerResponse::recv_http() {
     // read the HTTP header, ensure that we got successful message
     // and successfully parsed payload length
 
-    int recv_length = recv(socket, &buffer, HTTP_HEADER_MAX_SIZE, 0);  
+    int recv_length = recv(sock, &buffer, HTTP_HEADER_MAX_SIZE, 0);  
     assert(recv_length > 0); // make sure socket didn't close on us 
-    http_resp = std::string(buffer, recv_length);
+    std::string http_resp = std::string(buffer, recv_length);
     
     // Split on CRLF, parse the response code and content length
     // header fields
@@ -182,17 +199,18 @@ void TrackerProtocol::TrackerResponse::recv_http() {
     }
     
     // make sure we got the full message, and OK status
-    bencoded_payload = lines.back();
+    std::string bencoded_payload = lines.back();
     assert(response_code == HTTP_OK); 
     assert(payload_length > 0); 
     assert(bencoded_payload.length() == payload_length);
     
+    // bdecode the payload and fill in fields
     parse_payload(bencoded_payload);
 }
 
-void TrackerProtocol::TrackerResponse::parse_payload(std::string payload) { 
+void TrackerProtocol::TrackerManager::parse_payload(std::string payload) { 
     bencode::data data  = bencode::decode(payload);
-    auto resp_dict = std::get<bencode::dict>(data); 
+    bencode::dict resp_dict = std::get<bencode::dict>(data); 
 
     // If we failed, other fields are not guaranteed to exist
     if(resp_dict.find("failure reason") != resp_dict.end()) {

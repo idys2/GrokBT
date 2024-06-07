@@ -47,6 +47,7 @@ add_library(TorrentModule
             src/tracker_protocol.cpp
             src/tcp_utils.cpp
             src/peer.cpp
+            src/metainfo.cpp
             )
 
 # set target libcurl and openssl
