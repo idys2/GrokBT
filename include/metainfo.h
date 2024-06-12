@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #include "hash.h"
-#include "bencode.hpp"
+#include "bencode_wrapper.hpp"
 
 namespace Metainfo {
 
