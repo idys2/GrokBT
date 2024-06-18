@@ -20,27 +20,40 @@ namespace Messages {
     const uint8_t PIECE_ID = 7;
     const uint8_t CANCEL_ID = 8;    
     const uint8_t PORT_ID = 9;
+    const uint8_t HANDSHAKE_ID = 10;    // this isn't part of the bittorrent protocol, but is used internally
 
-    // forward declare
-    class Message;
-    struct Buffer;  
-
-    // message pack() -> buffer
-    // buffer unpack() -> message
-    struct Buffer { 
-        uint32_t length;
-        uint32_t bytes_read;
+    struct Buffer {
+        uint32_t total_length;          // the total length of this buffer, length of message + sizeof(uint32_t)
+        uint32_t bytes_read;            // the number of bytes that have been read
         std::unique_ptr<uint8_t[]> ptr;
-        Buffer(uint32_t length);
 
-        Message unpack();
+        Buffer(uint32_t length);        // For a nonhandshake message
+        Buffer(uint8_t pstrlen);        // For a handshake message
     };
-
+    
     class Message {
-        
+        protected:
+            uint32_t total_length;  
+        public:
+            Message();
+            virtual Buffer *pack();
+            virtual void unpack(Buffer *buff);
     };
 
     class Handshake : public Message {
+
+        private: 
+            uint8_t pstrlen;
+            std::string pstr;
+            uint8_t reserved[8];
+            std::string info_hash; 
+            std::string peer_id;
+
+        public: 
+            Handshake(uint8_t pstrlen, std::string pstr, std::string info_hash, std::string peer_id);
+
+            Buffer *pack();
+            void unpack(Buffer *buff);
 
     };
 

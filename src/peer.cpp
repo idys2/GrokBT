@@ -11,6 +11,8 @@ Peer::PeerClient::PeerClient(std::string pid, std::string ip_addr, int p) {
     shook = false;
     connected = false;
     peer_id = "";
+    buff = nullptr;
+    reading = false;
 }
 
 Peer::PeerClient::PeerClient(uint32_t ip_addr, uint16_t p) {
@@ -25,6 +27,8 @@ Peer::PeerClient::PeerClient(uint32_t ip_addr, uint16_t p) {
     shook = false;
     connected = false;
     peer_id = "";
+    buff = nullptr;
+    reading = false;
 }
 
 std::string Peer::PeerClient::to_string() {

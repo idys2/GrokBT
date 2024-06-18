@@ -1,5 +1,4 @@
 #include <iostream>
-
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netdb.h>
@@ -12,6 +11,8 @@
 #include <argparse/argparse.hpp>
 
 #include "client.h"
+#include "peer.h"
+#include "message.h"
 #include "metainfo.h"
 #include "tracker_protocol.h"
 
@@ -63,13 +64,51 @@ int main(int argc, char* argv[]) {
         
         for(int i = 0; i < fd_count; i++) {
             
-            // any client that responded here are now connected
+            // any client that responded is now connected
             // now we need to handshake
             if(pfds[i].revents & (POLLIN | POLLOUT)) {
-                std::cout << peers[i].to_string() << std::endl;
+                peers[i].connected |= true; 
+                
+                // the peer is sending a message, but we didn't recv fully
+                // place the new bytes into the previous buffer that was already alloc'd
+                if(peers[i].reading) {
+                    uint32_t total_len = (peers[i].buff) -> total_length; 
+                    uint32_t bytes_read = (peers[i].buff) -> bytes_read;
+                    
+                    // request the remaining number of bytes
+                    // place into ptr + bytes_read
+                    int bytes_recv = recv(pfds[i].fd, ((peers[i].buff) -> ptr).get() + bytes_read, total_len - bytes_read, 0);
+                    (peers[i].buff) -> bytes_read += bytes_recv;
+                }
+
+                // peer is sending a new handshake
+                else if (!peers[i].shook) {
+                    uint8_t pstrlen;
+                    // recv first byte 
+                    recv(pfds[i].fd, &pstrlen, 1, 0);
+
+                    // create a buffer, we know length
+                    peers[i].buff = new Messages::Buffer(pstrlen);
+                    (peers[i].buff) -> bytes_read += 1;
+
+                    // recv for rest of bytes
+                    int bytes_recv = recv(pfds[i].fd, ((peers[i].buff) -> ptr).get() + 1, 48 + pstrlen, 0);
+                    (peers[i].buff) -> bytes_read += bytes_recv;
+                }
+
+                // peer is sending other new messages...
+                // ...
+
+                // see if the recv we did for the peer resulted in a completed message 
+                // if so, then process that message, 
+                // free the buffer, 
+                // set reading to false. 
+                if((peers[i].buff) -> bytes_read == (peers[i].buff) -> total_length) {
+
+                }
+
+
             }
-
-
         }    
     }
 

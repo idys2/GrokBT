@@ -11,20 +11,23 @@
 
 namespace Peer {
 
-    // An unconnected, non-handshook peer client
-    // these get return by the tracker manager.
+    // An unconnected, non-handshook peer client. 
     struct PeerClient { 
         int socket;
         bool am_interested; 
         bool am_choking; 
         bool peer_interested; 
         bool peer_choking;
-        
+        std::string peer_id;
+
         // did we handshake with this peer yet?
         bool shook; 
         // did we connect to this peer yet?
         bool connected;
-        std::string peer_id;
+        // is this peer in the middle of sending a message?
+        bool reading;
+
+        Messages::Buffer *buff;        // this peer's buffer that stores bytes for an incoming message
 
         sockaddr_in sockaddr;
         PeerClient(std::string peer_id_str, std::string ip_addr, int port);
