@@ -78,3 +78,24 @@ target_include_directories(TorrentModule PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 add_executable(torrent src/main.cpp)
 target_link_libraries(torrent TorrentModule)
+
+# tests
+file(GLOB TEST_FILES test/*.cpp)
+
+add_custom_target(build_tests)
+
+foreach(TEST_FILE ${TEST_FILES})
+    get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
+    add_executable(${TEST_NAME} ${TEST_FILE} ${SOURCES})
+    target_link_libraries(${TEST_NAME} TorrentModule)
+
+    set_target_properties(${TEST_NAME} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    )
+
+    add_custom_target(build_${TEST_NAME} DEPENDS ${TEST_NAME})
+
+    add_dependencies(build_tests build_${TEST_NAME})
+endforeach()
+
+add_compile_definitions(PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
