@@ -4,7 +4,7 @@
 #include <string>
 #include <curl/curl.h>
 
-#include "bencode.hpp"
+#include "bencode_wrapper.hpp"
 #include "peer.h"
 #include "metainfo.h"
 #include "tcp_utils.h"
