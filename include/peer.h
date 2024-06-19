@@ -10,32 +10,27 @@
 #include "message.h"
 
 namespace Peer
-{
-
-    // An unconnected, non-handshook peer client.
+{   
+    
     struct PeerClient
     {
-        int socket;
-        bool am_interested;
-        bool am_choking;
-        bool peer_interested;
-        bool peer_choking;
-        std::string peer_id;
+        int socket;           // the peer's socket
+        bool am_interested;   // whether we are interested in this peer
+        bool am_choking;      // whether we are choking this peer
+        bool peer_interested; // whether this peer is interested in our client
+        bool peer_choking;    // whether this peer is choking our client
+        std::string peer_id;  // this peer's chosen id
 
-        // did we send the handshake with this peer yet?
-        bool sent_shake;
-        // did we recv the handshake with this peer yet?
-        bool recv_shake;
-        // did we connect to this peer yet?
-        bool connected;
-        // is this peer in the middle of sending a message?
-        bool reading;
+        bool sent_shake; // did we send the handshake with this peer yet?
+        bool recv_shake; // did we recv the handshake with this peer yet?
+        bool connected;  // did we connect to this peer yet?
+        bool reading;    // is this peer in the middle of sending a message?
 
         Messages::Buffer *buffer; // this peer's buffer that stores bytes for an incoming message
 
-        sockaddr_in sockaddr;
-        PeerClient(std::string peer_id_str, std::string ip_addr, int port);
-        PeerClient(uint32_t ip_addr, uint16_t port);
+        sockaddr_in sockaddr;                                               // this peer's socket address
+        PeerClient(std::string peer_id_str, std::string ip_addr, int port); // overload for dictionary mode
+        PeerClient(uint32_t ip_addr, uint16_t port);                        // overload for binary mode
         std::string to_string();
     };
 

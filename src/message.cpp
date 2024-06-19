@@ -31,6 +31,7 @@ Messages::Buffer *Messages::Handshake::pack()
 
     Messages::Buffer *buffer = new Messages::Buffer(pstrlen);
 
+    // for advancing the pointer when we read from the buffer
     int idx = 0;
     memcpy(buffer->ptr.get() + idx, &pstrlen, sizeof(pstrlen));
     idx += sizeof(pstrlen);
@@ -54,24 +55,36 @@ void Messages::Handshake::unpack(Messages::Buffer *buf)
 {
 
     int idx = 0;
-    memcpy(&pstrlen, &(buf->ptr.get()[idx]), sizeof(pstrlen));
+    memcpy(&pstrlen, buf->ptr.get() + idx, sizeof(pstrlen));
     idx += sizeof(pstrlen);
 
-    pstr = std::string((buf->ptr.get()[idx]), pstrlen);
+    pstr = std::string((const char *)(buf->ptr.get() + idx), pstrlen);
     idx += pstrlen;
 
-    memcpy(&reserved[0], &buf->ptr.get()[idx], 8);
+    memcpy(&reserved[0], buf->ptr.get() + idx, 8);
     idx += 8;
 
-    info_hash = std::string((buf->ptr.get()[idx]), 20);
+    info_hash = std::string((const char *)(buf->ptr.get() + idx), 20);
     idx += 20;
 
-    peer_id = std::string((buf->ptr.get()[idx]), 20);
+    peer_id = std::string((const char *)(buf->ptr.get() + idx), 20);
+    idx += 20;
 
     total_length = 49 + pstrlen;
 }
 
 std::string Messages::Handshake::to_string()
 {
-    return peer_id + std::to_string(pstrlen) + " " + pstr + " " + info_hash;
+    std::string ret = "Peer id: " + peer_id + "\n" + "Info hash: " + info_hash + "\n" + "pstr: " + pstr + "\n";
+    return ret;
+}
+
+std::string Messages::Handshake::get_info_hash()
+{
+    return info_hash;
+}
+
+std::string Messages::Handshake::get_peer_id()
+{
+    return peer_id;
 }
