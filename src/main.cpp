@@ -26,10 +26,13 @@ int main(int argc, char *argv[])
     std::string torrent_file;
     std::string client_id;
     int port;
+    int timeout;
 
     program.add_argument("-f").default_value("debian1.torrent").store_into(torrent_file);
     program.add_argument("-id").default_value("EZ6969").store_into(client_id);
     program.add_argument("-p").default_value(6881).store_into(port);
+    // default timeout to 2 minutes
+    program.add_argument("-t").default_value(120 * 1000).store_into(timeout);
     try
     {
         program.parse_args(argc, argv);
@@ -53,6 +56,8 @@ int main(int argc, char *argv[])
     int fd_count = peers.size();
     pollfd *pfds = new pollfd[fd_count];
 
+    std::cout << "Got " << fd_count << " peers." << std::endl;
+
     // get info hash
     std::string metainfo_buffer = Metainfo::read_metainfo(torrent_file);
     std::string info_dict_str = Metainfo::read_info_dict_str(metainfo_buffer);
@@ -62,6 +67,7 @@ int main(int argc, char *argv[])
     // connect on these sockets
     for (int i = 0; i < fd_count; i++)
     {
+        std::cout << peers[i].to_string() << std::endl;
         int peer_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         fcntl(peer_sock, F_SETFL, O_NONBLOCK);
         pfds[i].fd = peer_sock;
@@ -72,6 +78,7 @@ int main(int argc, char *argv[])
         // connecting on non blocking sockets should give EINPROGRESS
         if (errno != EINPROGRESS)
         {
+            std::cout << "Nonblocking connect failed" << std::endl;
             std::cout << strerror(errno) << std::endl;
         }
     }
@@ -79,7 +86,14 @@ int main(int argc, char *argv[])
     // main poll event loop
     while (true)
     {
-        int poll_peers = poll(pfds, fd_count, 5 * 1000);
+        int poll_peers = poll(pfds, fd_count, timeout);
+
+        // no peers responded
+        // should send another request to tracker
+        if (poll_peers == 0)
+        {
+            break;
+        }
 
         for (int i = 0; i < fd_count; i++)
         {
@@ -99,24 +113,35 @@ int main(int argc, char *argv[])
                     // if we haven't handshake with this peer yet, send handshake
                     Messages::Handshake client_handshake = Messages::Handshake(19, "BitTorrent protocol", info_hash, client_id);
 
-                    // pack the handshake into a buffer, then send over the wire
-                    Messages::Buffer *buff = client_handshake.pack();
-                    uint32_t remaining_bytes = buff->total_length;
+                    // pack the handshake into a buffer
+                    uint8_t pstrlen = client_handshake.get_pstrlen();
+                    Messages::Buffer *buff = new Messages::Buffer(pstrlen);
+                    client_handshake.pack(buff);
 
+                    // send the buffer over the wire
+                    uint32_t remaining_bytes = buff->total_length;
                     assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
                     delete buff;
 
                     peers[i].sent_shake = true;
                 }
 
+                // if peer refuses/resets the connection,
+                // set their socket to not be polled
                 if (retval != 0)
                 {
+                    std::cout << "getsockopt failed" << std::endl;
                     std::cout << strerror(retval) << std::endl;
+                    pfds[i].fd = -1;
+                    close(pfds[i].fd);
                 }
 
                 if (error != 0)
                 {
+                    std::cout << "getsockopt error" << std::endl;
                     std::cout << strerror(error) << std::endl;
+                    pfds[i].fd = -1;
+                    close(pfds[i].fd);
                 }
             }
 
@@ -134,7 +159,9 @@ int main(int argc, char *argv[])
                 // error occurred on the peer client
                 if (peek_recv == -1)
                 {
-                    std::cout << strerror(errno) << std::endl;
+                    std::cout << "Recv failed: " << strerror(errno) << std::endl;
+                    // stop polling the socket
+                    pfds[i].fd = -1;
                 }
 
                 // socket has closed by the peer client
@@ -183,26 +210,21 @@ int main(int argc, char *argv[])
                 // read the first 4 bytes, alloc the buffer, try to recv
                 else if (peers[i].sent_shake && peers[i].recv_shake)
                 {
-                    std::cout << "new message" << std::endl;
+                    // std::cout << "new message" << std::endl;
                 }
 
-                // see if the recv we did for the peer resulted in a completed message
-                // if so, then unpack the message, free the buffer,
-                // set reading to false.
-
-                // note that the peer buffer must be non-null for a message to be fulfilled
-                // otherwise, this means that we didn't process the message when we received it
+                // if the recv we did for the peer resulted in a completed message.
+                // if so, then unpack the message, free the buffer, set reading to false.
                 bool done_recv = (peers[i].buffer) && (peers[i].buffer)->bytes_read == (peers[i].buffer)->total_length;
                 if (done_recv)
                 {
                     // if no handshake yet, then this must be a handshake message
                     if (!peers[i].recv_shake)
                     {
-                        Messages::Handshake peer_handshake = Messages::Handshake();
-                        peer_handshake.unpack(peers[i].buffer);
-
+                        Messages::Handshake peer_handshake = Messages::Handshake(peers[i].buffer);
                         peers[i].recv_shake = true;
                         peers[i].peer_id = peer_handshake.get_peer_id();
+                        std::cout << "Handshake successful with: " << peers[i].peer_id << std::endl;
                     }
 
                     // other messages... find using id field!
