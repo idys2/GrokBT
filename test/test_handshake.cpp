@@ -1,27 +1,10 @@
-#include <iostream>
-#include <vector>
-#include <thread>
-#include <string>
-#include <cstring>
-
-#include <assert.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <errno.h>
-
 #include "client.h"
 #include "tracker_protocol.h"
 
-bool DEBUG = true;
-#define DEBUGPRINTLN(x) if (DEBUG) std::cout << x << std::endl
 #define on_error(x) {std::cerr << x << ": " << strerror(errno) << std::endl; exit(1); }
 
 /**
- * Test handshaking on a single peer
+ * TODO: Test handshaking on a single peer
  */
 int main() {
 
