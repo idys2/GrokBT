@@ -13,99 +13,75 @@
 #include <poll.h>
 #include <errno.h>
 
+#include "client.h"
 #include "tracker_protocol.h"
-#include "peer_wire_protocol.h"
 
 bool DEBUG = true;
 #define DEBUGPRINTLN(x) if (DEBUG) std::cout << x << std::endl
 #define on_error(x) {std::cerr << x << ": " << strerror(errno) << std::endl; exit(1); }
 
+/**
+ * Test handshaking on a single peer
+ */
 int main() {
 
     // parse metafile and obtain announce url
-    std::string metainfo = ProtocolUtils::read_metainfo("debian1.torrent");
-    std::string announce_url = ProtocolUtils::read_announce_url(metainfo);
-    DEBUGPRINTLN("Announce URL: " + announce_url);
+    std::string torrent_file = std::string(PROJECT_ROOT) + "/torrents/debian1.torrent";
+	std::string client_id = "EZ6969";
+	int port = 6881;
+
+    // generate unique peer id
+	std::string peer_id = Client::unique_peer_id(client_id);
 
     // connect to tracker
-	sockaddr_in tracker_addr = TrackerProtocol::get_tracker_addr(announce_url);
-	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock < 0) on_error("Failed to create socket to tracker");
-	
-	int connected = connect(sock, (sockaddr *)&tracker_addr, sizeof(sockaddr_in));
-	if (connected < 0) on_error("Failed to connect to tracker socket");
+	TrackerProtocol::TrackerManager tracker(torrent_file, peer_id, port);
+	tracker.send_http();
+	tracker.recv_http();
+	std::vector<Peer::PeerClient> peers = tracker.peers;
 
-    // create tracker request
-	TrackerProtocol::TrackerRequest tracker_req(announce_url, sock); 
-	
-	// create tracker response 
-	TrackerProtocol::TrackerResponse tracker_resp(sock);
+	assert(!peers.empty());
+    //assert(peers.size() == 1);
 
-	// hash info dict
-	std::string info_dict = ProtocolUtils::read_info_dict_str(metainfo); 
-	std::string hashed_info_dict = ProtocolUtils::hash_info_dict_str(info_dict);
-	
-	// generate unique peer id
-	std::string id = "EZ6969"; 
-	std::string client_id = ProtocolUtils::unique_peer_id(id);
+    // get info hash
+    std::string metainfo_buffer = Metainfo::read_metainfo(torrent_file);
+    std::string info_dict_str = Metainfo::read_info_dict_str(metainfo_buffer);
+    std::string info_hash = Metainfo::hash_info_dict_str(info_dict_str);
 
-	// set fields
-	tracker_req.info_hash = hashed_info_dict;
-	tracker_req.peer_id = client_id;
-	tracker_req.port = 6881;
-	tracker_req.uploaded = "0";
-	tracker_req.downloaded = "0";
-	tracker_req.left = "something";
-	tracker_req.compact = 1;
-	tracker_req.no_peer_id = 0;
-	tracker_req.event = TrackerProtocol::EventType::STARTED;
+    // create socket for peer and connect
+    Peer::PeerClient peer = peers[0];
 
-    // send HTTP request
-    DEBUGPRINTLN("Sending HTTP request...");
-    tracker_req.send_http();
+    std::cout << "Attempting to connect to: " << peer.to_string() << std::endl;
 
-    // get HTTP response
-    DEBUGPRINTLN("Receiving HTTP response");
-    tracker_resp.recv_http();
+    int peer_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (peer_sock < 0) on_error("Failed to create socket");
 
-    for (auto& peer : tracker_resp.peers) DEBUGPRINTLN(peer.str());
-
-    /**
-     * connect to peers
-     */
-    auto num_peers = tracker_resp.peers.size();
-
-    // peer.str() -> struct Peer
-    
-    // create a socket for each TCP peer connection
-    for (auto i = 0; i < num_peers; i++) {
-        auto peer_addr = tracker_resp.peers[i]; // peer as defined in `tracker_protocol.h`
-
-        // create socket for peer
-        int peer_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (peer_sock < 0) on_error("Failed to create socket for peer " + peer_addr.str());
-
-        // attempt to connect to the peer
-        if (connect(peer_sock, (struct sockaddr *) &peer_addr.sockaddr, sizeof(peer_addr.sockaddr)) < 0) {
-            std::cout << "Could not connect to " << peer_addr.str() + ": " << strerror(errno) << std::endl;
-            
-        } else {
-            std::cout << "Connected to peer: " << peer_addr.str() << std::endl;
-
-            // construct and send handshake packet
-            auto handshake = PeerWireProtocol::Handshake(tracker_req.info_hash, tracker_req.peer_id);
-            handshake.send_msg(peer_sock);
-
-            DEBUGPRINTLN("Sent handshake");
-
-            // receive and unpack handshake
-            auto peer_handshake = PeerWireProtocol::Handshake();
-            peer_handshake.recv_msg(peer_sock);
-
-            DEBUGPRINTLN("Received handshake packet from: " + peer_addr.str() + "\n" + peer_handshake.str());
-            if (handshake.info_hash != peer_handshake.info_hash) {
-                DEBUGPRINTLN("Received nonmatching info_hash, dropping connection.");
-            }
-        }
+    if (connect(peer_sock, (struct sockaddr *) &peer.sockaddr, sizeof(peer.sockaddr)) < 0) {
+        on_error("Could not connect to peer");
     }
+
+    // send client handshake
+    Messages::Handshake client_handshake = Messages::Handshake(19, "BitTorrent protocol", info_hash, client_id);
+
+    Messages::Buffer *buf = client_handshake.pack();
+    assert(sendall(peer_sock, (buf->ptr).get(), &(buf->total_length)) >= 0);
+    delete buf;
+
+    // receive peer handshake
+    int bytes_recv = 0;
+
+    uint8_t pstrlen;
+    bytes_recv += recv(peer_sock, &pstrlen, 1, 0);
+
+    peer.buffer = new Messages::Buffer(pstrlen);
+    (peer.buffer)->bytes_read += bytes_recv;
+
+    bytes_recv += recv(peer_sock, (peer.buffer->ptr).get() + 1, 48 + pstrlen, 0);
+    (peer.buffer)->bytes_read += bytes_recv;
+
+    Messages::Handshake peer_handshake = Messages::Handshake();
+    peer_handshake.unpack(peer.buffer);
+
+    std::cout << client_handshake.to_string() << std::endl;
+    std::cout << peer_handshake.to_string() << std::endl;
+    //assert(client_handshake.info_hash == peer_handshake.info_hash);
 }
