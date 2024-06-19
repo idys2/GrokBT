@@ -9,25 +9,29 @@
 
 #include "message.h"
 
-namespace Peer {
+namespace Peer
+{
 
-    // An unconnected, non-handshook peer client. 
-    struct PeerClient { 
+    // An unconnected, non-handshook peer client.
+    struct PeerClient
+    {
         int socket;
-        bool am_interested; 
-        bool am_choking; 
-        bool peer_interested; 
+        bool am_interested;
+        bool am_choking;
+        bool peer_interested;
         bool peer_choking;
         std::string peer_id;
 
-        // did we handshake with this peer yet?
-        bool shook; 
+        // did we send the handshake with this peer yet?
+        bool sent_shake;
+        // did we recv the handshake with this peer yet?
+        bool recv_shake;
         // did we connect to this peer yet?
         bool connected;
         // is this peer in the middle of sending a message?
         bool reading;
 
-        Messages::Buffer *buff;        // this peer's buffer that stores bytes for an incoming message
+        Messages::Buffer *buffer; // this peer's buffer that stores bytes for an incoming message
 
         sockaddr_in sockaddr;
         PeerClient(std::string peer_id_str, std::string ip_addr, int port);

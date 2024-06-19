@@ -8,10 +8,11 @@ Peer::PeerClient::PeerClient(std::string pid, std::string ip_addr, int p) {
     am_choking = true; 
     peer_choking = true; 
     peer_interested = false;
-    shook = false;
+    recv_shake = false;
+    sent_shake = false;
     connected = false;
     peer_id = "";
-    buff = nullptr;
+    buffer = nullptr;
     reading = false;
 }
 
@@ -24,10 +25,11 @@ Peer::PeerClient::PeerClient(uint32_t ip_addr, uint16_t p) {
     am_choking = true; 
     peer_choking = true; 
     peer_interested = false;
-    shook = false;
+    recv_shake = false;
+    sent_shake = false;
     connected = false;
     peer_id = "";
-    buff = nullptr;
+    buffer = nullptr;
     reading = false;
 }
 

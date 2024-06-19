@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <argparse/argparse.hpp>
 
@@ -15,8 +16,10 @@
 #include "message.h"
 #include "metainfo.h"
 #include "tracker_protocol.h"
+#include "tcp_utils.h"
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
     // get arguments from command line
 
     argparse::ArgumentParser program("client");
@@ -27,17 +30,19 @@ int main(int argc, char* argv[]) {
     program.add_argument("-f").default_value("debian1.torrent").store_into(torrent_file);
     program.add_argument("-id").default_value("EZ6969").store_into(client_id);
     program.add_argument("-p").default_value(6881).store_into(port);
-    try {
+    try
+    {
         program.parse_args(argc, argv);
     }
-    catch (const std::exception& err) {
+    catch (const std::exception &err)
+    {
         std::cerr << err.what() << std::endl;
         std::cerr << program;
         std::exit(1);
     };
 
     // generate unique peer id
-	std::string peer_id = Client::unique_peer_id(client_id);
+    std::string peer_id = Client::unique_peer_id(client_id);
 
     TrackerProtocol::TrackerManager tracker(torrent_file, peer_id, port);
     tracker.send_http();
@@ -48,72 +53,156 @@ int main(int argc, char* argv[]) {
     int fd_count = peers.size();
     pollfd *pfds = new pollfd[fd_count];
 
+    // get info hash
+    std::string metainfo_buffer = Metainfo::read_metainfo(torrent_file);
+    std::string info_dict_str = Metainfo::read_info_dict_str(metainfo_buffer);
+    std::string info_hash = Metainfo::hash_info_dict_str(info_dict_str);
+
     // create socket for all peers, and set to nonblocking
     // connect on these sockets
-    for(int i = 0; i < fd_count; i++) {
+    for (int i = 0; i < fd_count; i++)
+    {
         int peer_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         fcntl(peer_sock, F_SETFL, O_NONBLOCK);
         pfds[i].fd = peer_sock;
         pfds[i].events = POLLIN | POLLOUT;
-        connect(peer_sock, (sockaddr *)(&peers[i].sockaddr), sizeof(sockaddr_in));
+        int connect_ret = connect(peer_sock, (sockaddr *)(&peers[i].sockaddr), sizeof(sockaddr_in));
+
+        // connecting on non blocking sockets should give EINPROGRESS
+        if (errno != EINPROGRESS)
+        {
+            std::cout << strerror(errno) << std::endl;
+        }
     }
 
     // main poll event loop
-    while(true) {
+    while (true)
+    {
         int poll_peers = poll(pfds, fd_count, 5 * 1000);
-        
-        for(int i = 0; i < fd_count; i++) {
-            
+
+        for (int i = 0; i < fd_count; i++)
+        {
+
             // any client that responded is now connected
             // now we need to handshake
-            if(pfds[i].revents & (POLLIN | POLLOUT)) {
-                peers[i].connected |= true; 
-                
-                // the peer is sending a message, but we didn't recv fully
-                // place the new bytes into the previous buffer that was already alloc'd
-                if(peers[i].reading) {
-                    uint32_t total_len = (peers[i].buff) -> total_length; 
-                    uint32_t bytes_read = (peers[i].buff) -> bytes_read;
-                    
-                    // request the remaining number of bytes
-                    // place into ptr + bytes_read
-                    int bytes_recv = recv(pfds[i].fd, ((peers[i].buff) -> ptr).get() + bytes_read, total_len - bytes_read, 0);
-                    (peers[i].buff) -> bytes_read += bytes_recv;
+            if (pfds[i].revents & POLLOUT)
+            {
+                // verify that we're connected
+                int error = 0;
+                socklen_t len = sizeof(error);
+                int retval = getsockopt(pfds[i].fd, SOL_SOCKET, SO_ERROR, &error, &len);
+
+                if (retval != 0)
+                {
+                    /* there was a problem getting the error code */
+                    std::cout << strerror(retval) << std::endl;
                 }
 
-                // peer is sending a new handshake
-                else if (!peers[i].shook) {
+                if (error != 0)
+                {
+                    /* socket has a non zero error status */
+                    std::cout << strerror(error) << std::endl;
+                }
+
+                // if we haven't handshake with this peer yet,
+                // send our handshake first
+                if (!peers[i].sent_shake)
+                {
+                    Messages::Handshake client_handshake = Messages::Handshake(19, "BitTorrent protocol", info_hash, client_id);
+
+                    // pack the handshake into a buffer, then send over the wire
+                    Messages::Buffer *buff = client_handshake.pack();
+                    uint32_t remaining_bytes = buff->total_length;
+
+                    assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+                    delete buff;
+
+                    peers[i].sent_shake = true;
+                }
+            }
+
+            // ready to read on the peer socket
+            if (pfds[i].revents & POLLIN)
+            {
+
+                peers[i].connected |= true;
+
+                // the peer is sending a continuation of a previous message
+                // place the new bytes in the previously made buffer, and continue
+                if (peers[i].reading)
+                {
+                    // std::cout << "still reading" << std::endl;
+
+                    uint32_t total_len = (peers[i].buffer)->total_length;
+                    uint32_t bytes_read = (peers[i].buffer)->bytes_read;
+
+                    // std::cout << total_len << std::endl;
+                    // std::cout << bytes_read << std::endl;
+
+                    // request the remaining number of bytes
+                    // place into ptr + bytes_read
+                    int bytes_recv = recv(pfds[i].fd, ((peers[i].buffer)->ptr).get() + bytes_read, total_len - bytes_read, 0);
+                    (peers[i].buffer)->bytes_read += bytes_recv;
+                }
+
+                // peer is sending a new handshake message
+                else if (!peers[i].recv_shake)
+                {
+
+                    std::cout << "handshake" << std::endl;
+
                     uint8_t pstrlen;
-                    // recv first byte 
-                    recv(pfds[i].fd, &pstrlen, 1, 0);
+                    // recv first byte
+                    int bytes_recv = recv(pfds[i].fd, &pstrlen, 1, 0);
+
+                    std::cout << bytes_recv << std::endl;
+                    std::cout << pstrlen << std::endl;
 
                     // create a buffer, we know length
-                    peers[i].buff = new Messages::Buffer(pstrlen);
-                    (peers[i].buff) -> bytes_read += 1;
+                    peers[i].buffer = new Messages::Buffer(pstrlen);
+                    (peers[i].buffer)->bytes_read += bytes_recv;
 
                     // recv for rest of bytes
-                    int bytes_recv = recv(pfds[i].fd, ((peers[i].buff) -> ptr).get() + 1, 48 + pstrlen, 0);
-                    (peers[i].buff) -> bytes_read += bytes_recv;
+                    bytes_recv = recv(pfds[i].fd, (peers[i].buffer->ptr).get() + 1, 48 + pstrlen, 0);
+                    (peers[i].buffer)->bytes_read += bytes_recv;
+
+                    std::cout << bytes_recv << std::endl;
+                    std::cout << (peers[i].buffer)->bytes_read << std::endl;
+                    std::cout << (peers[i].buffer)->total_length << std::endl;
+
+                    peers[i].reading |= true;
                 }
 
                 // peer is sending other new messages...
-                // ...
+                // read the first 4 bytes, alloc the buffer, try to recv
 
-                // see if the recv we did for the peer resulted in a completed message 
-                // if so, then process that message, 
-                // free the buffer, 
-                // set reading to false. 
-                if((peers[i].buff) -> bytes_read == (peers[i].buff) -> total_length) {
+                // see if the recv we did for the peer resulted in a completed message
+                // if so, then unpack the message, free the buffer,
+                // set reading to false.
+                if ((peers[i].buffer)->bytes_read == (peers[i].buffer)->total_length)
+                {
+                    std::cout << "done reading" << std::endl;
 
+                    // if no handshake, then this must be a handshake message
+                    if (!peers[i].recv_shake)
+                    {
+                        Messages::Handshake peer_handshake = Messages::Handshake();
+                        peer_handshake.unpack(peers[i].buffer);
+
+                        std::cout << peer_handshake.to_string() << std::endl;
+                    }
+
+                    // other messages... find using id field!
+
+                    delete peers[i].buffer;
+                    peers[i].reading = false;
+                    peers[i].recv_shake = true;
                 }
-
-
             }
-        }    
+        }
     }
 
     delete[] pfds;
-
 
     return 0;
 }
