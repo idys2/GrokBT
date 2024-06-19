@@ -6,6 +6,10 @@
 #include <assert.h>
 #include <sys/socket.h>
 #include <netdb.h>
+/**
+ * LEGACY CODE
+ * @see main.cpp
+ */
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
