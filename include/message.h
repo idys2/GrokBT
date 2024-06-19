@@ -2,6 +2,7 @@
 #define MESSAGE_H
 
 #include <string>
+#include <cstring>
 #include <assert.h>
 #include <memory>
 
