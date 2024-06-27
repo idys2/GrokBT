@@ -76,7 +76,7 @@ namespace TrackerProtocol
     TrackerManager::TrackerManager(std::string torrent_file, std::string p_id, int c_port)
     {
         // parse metafile and obtain announce url
-        std::string metainfo = Metainfo::read_metainfo(torrent_file);
+        std::string metainfo = Metainfo::read_metainfo_to_buffer(torrent_file);
         std::string info_dict = Metainfo::read_info_dict_str(metainfo);
 
         // set all fields on creation

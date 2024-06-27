@@ -1,54 +1,42 @@
 #include "message.h"
+#include <iostream>
 
 namespace Messages
-{
-
-    Handshake::Handshake(Buffer *buff) : Message(buff)
+{   
+    // interpret data stored in the buffer as a bitfield message
+    // returns a bitfield struct as defined in file.h
+    File::BitField parseBitField(Buffer *buff)
     {
+        uint32_t len;
+        uint8_t id;
+
         int idx = 0;
-        // read the pstrlen field
-        memcpy(&pstrlen, buff->ptr.get() + idx, sizeof(pstrlen));
-        idx += sizeof(pstrlen);
+        memcpy(&len, buff->ptr.get() + idx, sizeof(len));
+        idx += sizeof(len);
 
-        // read the pstr field
-        pstr = std::string((const char *)(buff->ptr.get() + idx), pstrlen);
-        idx += pstrlen;
+        memcpy(&id, buff->ptr.get() + idx, sizeof(id));
+        idx += sizeof(id);
 
-        // read the reserved field
-        memcpy(&reserved[0], buff->ptr.get() + idx, 8);
-        idx += 8;
-
-        // read the info hash field
-        info_hash = std::string((const char *)(buff->ptr.get() + idx), 20);
-        idx += 20;
-
-        // read the peer_id field
-        peer_id = std::string((const char *)(buff->ptr.get() + idx), 20);
-        idx += 20;
+        return File::BitField(buff->ptr.get(), len - sizeof(id));
     }
 
-    void Handshake::pack(Buffer *buffer)
+    // Pack a bitfield into a buffer
+    Buffer bitFieldToBuffer(File::BitField bitfield)
     {
-        // for advancing the pointer when we write to the buffer
+        uint32_t len = bitfield.num_bits + sizeof(BITFIELD_ID);
+        Buffer b = Buffer(len + 1);
+
         int idx = 0;
+        // pack len and idx
+        memcpy(b.ptr.get() + idx, &len, sizeof(len));
+        idx += sizeof(len);
 
-        // pack the pstrlen first
-        memcpy(buffer->ptr.get() + idx, &pstrlen, sizeof(pstrlen));
-        idx += sizeof(pstrlen);
+        memcpy(b.ptr.get() + idx, &BITFIELD_ID, sizeof(BITFIELD_ID));
+        idx += sizeof(BITFIELD_ID);
 
-        // pack the pstr
-        memcpy(buffer->ptr.get() + idx, pstr.c_str(), pstrlen);
-        idx += pstrlen;
+        // pack bitfield
+        memcpy(b.ptr.get() + idx, bitfield.bits.data(), sizeof(bitfield.num_bits));
 
-        // pack the reserved bytes
-        memcpy(buffer->ptr.get() + idx, &reserved[0], 8);
-        idx += 8;
-
-        // pack the info hash
-        memcpy(buffer->ptr.get() + idx, info_hash.c_str(), 20);
-        idx += 20;
-
-        // pack the peer id
-        memcpy(buffer->ptr.get() + idx, peer_id.c_str(), 20);
+        return b;
     }
 }
