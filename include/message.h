@@ -171,7 +171,6 @@ namespace Messages
     };
 
     // ----------------------FIXED LENGTH MESSAGES -----------------------------
-
     // A base class for messages which may or may not have a payload
     class BaseMessage : public Message
     {
@@ -361,7 +360,7 @@ namespace Messages
 
     // interpret data stored in the buffer as a bitfield message
     // returns a bitfield struct as defined in file.h
-    File::BitField parseBitField(Buffer *buff);
+    File::BitField *parseBitField(Buffer *buff);
 
     // Pack a bitfield into a buffer
     Buffer bitFieldToBuffer(File::BitField bitfield);

@@ -16,6 +16,7 @@ namespace Peer
         connected = false;
         peer_id = "";
         buffer = nullptr;
+        peer_bitfield = nullptr;
         reading = false;
     }
 
@@ -34,6 +35,7 @@ namespace Peer
         connected = false;
         peer_id = "";
         buffer = nullptr;
+        peer_bitfield = nullptr;
         reading = false;
     }
 

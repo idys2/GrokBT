@@ -12,34 +12,6 @@
 
 namespace Metainfo
 {
-
-	class TorrentMetadata
-	{
-	public:
-		long long piece_length;	 // the length of each piece in a given torrent
-		std::string pieces;		 // concatenation of 20 byte SHA1 hashes, with one per piece
-		long long private_field; // field indicating if peers must show peer_id
-
-		// construct a metadata class using a string buffer containing all metadata
-		TorrentMetadata(std::string metainfo_buffer);
-	};
-
-	class SingleFileTorrentMetadata : public TorrentMetadata
-	{
-	public:
-		std::string name; // the name of the file being torrented
-		long long length; // the length of the file in bytes
-
-		SingleFileTorrentMetadata(std::string metainfo_buffer);
-	};
-
-	// TODO: finish this
-	class MultipleFileTorrentMetadata : public TorrentMetadata
-	{
-	public:
-		std::string name; // the name of the directory to save files
-	};
-
 	static sha1sum_ctx *ctx = sha1sum_create(NULL, 0);
 
 	// get the info dict string from a string buffer containing the metainfo file

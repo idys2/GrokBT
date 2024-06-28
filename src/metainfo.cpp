@@ -59,24 +59,4 @@ namespace Metainfo
         return std::string(checksum, 20);
     }
 
-    TorrentMetadata::TorrentMetadata(std::string metainfo_buffer)
-    {
-        bencode::data data = bencode::decode(metainfo_buffer);
-        auto metainfo_dict = std::get<bencode::dict>(data);              // metainfo as a bencode dictionary
-        auto info_dict = std::get<bencode::dict>(metainfo_dict["info"]); // info dictionary as a bencode dictionary
-
-        piece_length = std::get<long long>(info_dict["piece length"]);
-        pieces = std::get<std::string>(info_dict["pieces"]);
-    }
-
-    SingleFileTorrentMetadata::SingleFileTorrentMetadata(std::string metainfo_buffer) : TorrentMetadata(metainfo_buffer)
-    {
-        bencode::data data = bencode::decode(metainfo_buffer);
-        auto metainfo_dict = std::get<bencode::dict>(data);              // metainfo as a bencode dictionary
-        auto info_dict = std::get<bencode::dict>(metainfo_dict["info"]); // info dictionary as a bencode dictionary
-
-        name = std::get<std::string>(info_dict["name"]);
-        length = std::get<long long>(info_dict["length"]);
-    }
-
 }

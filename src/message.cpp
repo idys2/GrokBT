@@ -1,11 +1,10 @@
 #include "message.h"
-#include <iostream>
 
 namespace Messages
 {   
     // interpret data stored in the buffer as a bitfield message
     // returns a bitfield struct as defined in file.h
-    File::BitField parseBitField(Buffer *buff)
+    File::BitField *parseBitField(Buffer *buff)
     {
         uint32_t len;
         uint8_t id;
@@ -17,7 +16,7 @@ namespace Messages
         memcpy(&id, buff->ptr.get() + idx, sizeof(id));
         idx += sizeof(id);
 
-        return File::BitField(buff->ptr.get(), len - sizeof(id));
+        return new File::BitField(buff->ptr.get(), len - sizeof(id));
     }
 
     // Pack a bitfield into a buffer

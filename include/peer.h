@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 
 #include "message.h"
+#include "file.h"
 
 namespace Peer
 {   
@@ -27,6 +28,7 @@ namespace Peer
         bool reading;    // is this peer in the middle of sending a message?
 
         Messages::Buffer *buffer; // this peer's buffer that stores bytes for an incoming message
+        File::BitField *peer_bitfield;  // this peer's bitfield
 
         sockaddr_in sockaddr;                                               // this peer's socket address
         PeerClient(std::string peer_id_str, std::string ip_addr, int port); // overload for dictionary mode
