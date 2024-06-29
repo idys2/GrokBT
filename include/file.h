@@ -5,6 +5,7 @@
 #include <string>
 #include <queue>
 #include <memory>
+#include <cmath>
 
 #include "hash.h"
 #include "bencode_wrapper.hpp"
