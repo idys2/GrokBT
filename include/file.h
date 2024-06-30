@@ -6,6 +6,7 @@
 #include <queue>
 #include <memory>
 #include <fstream>
+#include <cmath>
 
 #include "message.h"
 #include "hash.h"
