@@ -5,22 +5,24 @@
 #include <string>
 #include <queue>
 #include <memory>
+#include <fstream>
 
+#include "message.h"
 #include "hash.h"
 #include "bencode_wrapper.hpp"
 
 namespace File
 {
+	static sha1sum_ctx *ctx = sha1sum_create(NULL, 0);
 
-	// A bitfield used in the bittorrent protocol. Wraps a vector.
+	// A bitfield used in the bittorrent protocol. Wraps a vector of bytes.
 	struct BitField
 	{
 		std::vector<uint8_t> bits; // the bitfield, stored as a byte vector
 		uint32_t num_bits;		   // the size of the bitfield. This field is needed because some bits will be unused
 
-		// Construct a bitfield by reading size bytes starting from a pointer
-		// This is used with Message Buffers so that we can read off the wire from bitfield messages
-		BitField(uint8_t *data, uint32_t num_bits);
+		// Construct a bitfield by interpreting a buffer as a bitfield message
+		BitField(Messages::Buffer *buff);
 
 		// Initialize a bit field that can hold num_bits number of bits, all unflipped
 		BitField(uint32_t num_bits);
@@ -31,10 +33,13 @@ namespace File
 		// set the bit representing bit_index to be true
 		void set_bit(uint32_t bit_index);
 
-		// find the first bit_index where this bitfield has an unflipped bit, but the BitField other 
+		// unset the bit representing bit_index to be true
+		void unset_bit(uint32_t bit_index);
+
+		// find the first bit_index where this bitfield has an unflipped bit, but the BitField other
 		// has a flipped bit.
 		// return the bit_index if found, or -1 if no such bit_index exists
-		int first_match(BitField other);
+		int first_match(BitField *other);
 
 		// find the first bit_index in this bitfield that is not set to true
 		// return this bit_index if found, or -1
@@ -43,6 +48,13 @@ namespace File
 		// see if all bits are flipped in this bitfield
 		// return true if they are, false if not
 		bool all_flipped();
+
+		// pack this bitfield into a buffer
+		// The returned buffer must be freed by the caller.
+		Messages::Buffer *pack();
+
+		// Print out this bitfield as a string
+		std::string to_string();
 	};
 
 	// A block of the file we are torrenting
@@ -69,17 +81,21 @@ namespace File
 
 	// Because we transact in subsets of pieces (blocks), each piece holds a bitfield representing the blocks
 	// that are within that piece. The piece struct manages these blocks.
+	// note that all pieces are not guaranteed to be the same size. By extension, this means that each block will also
+	// not necessarily be the same size
 	struct Piece
 	{
-		static long long piece_size;
-		static long long block_size;
-		static uint32_t num_blocks;
-		
-		std::unique_ptr<BitField> block_bitfield; // a bitfield tracking which blocks have been downloaded by the torrent
-		std::unique_ptr<uint8_t[]> data;		  // pointer to a buffer that we write to when we download. Size piece_length.
+		static const long long block_size = 1 << 14; // the max size of each block in this piece
 
 		std::string piece_hash; // 20 byte SHA1 hash for this piece
 		uint32_t piece_index;	// the piece index of this piece
+
+		std::unique_ptr<BitField> block_bitfield; // a bitfield tracking which blocks have been downloaded by the torrent
+		std::unique_ptr<uint8_t[]> data;		  // pointer to a buffer that we write to when we download. Size piece_size.
+
+
+		long long piece_size; // the max size of this piece
+		uint32_t num_blocks;  // the number of blocks in this piece
 
 		Piece(std::string piece_hash, uint32_t piece_index, long long size);
 
@@ -113,16 +129,22 @@ namespace File
 		long long length;	 // the length of the file in bytes
 		uint32_t num_pieces; // the number of pieces in this torrent
 
-		std::vector<Piece> piece_vec;  // vector of pieces, indexed by piece indices
+		std::vector<Piece> piece_vec; // vector of pieces, indexed by piece indices
 	public:
-		std::unique_ptr<BitField> piece_bitfield;	// bitfield of pieces. Used for fast intersection with peer bitfields
-		std::queue<Block> block_queue; // queue of block requests that we are currently trying to make
+		std::unique_ptr<BitField> piece_bitfield; // bitfield of pieces. Used for fast intersection with peer bitfields
+		std::queue<Block> block_queue;			  // queue of block requests that we are currently trying to make
 
-		SingleFileTorrent(std::string metainfo_buffer);
+		std::ofstream out_stream; 		// the file stream that this torrent should write out to
+		SingleFileTorrent(std::string metainfo_buffer, std::string out_file);
 
 		// Get all unfinished blocks from all unfinished piece vectors,
 		// and place these into the block queue
 		void update_block_queue();
+
+		// Interpret a buffer as a piece message, then write its contents to the representing piece struct
+		// and its data field. This function will not write unless the provided block stays within the piece
+		// size bounds.
+		void write_block(Messages::Buffer *buff);
 	};
 
 	// TODO: finish this

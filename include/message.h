@@ -7,8 +7,9 @@
 #include <memory>
 
 #include "hash.h"
-#include "file.h"
 #include "tcp_utils.h"
+
+#include <iostream>
 
 namespace Messages
 {
@@ -16,18 +17,18 @@ namespace Messages
     // under peer wire protocol.
 
     // message IDs assigned by bittorrent protocol
-    const uint8_t CHOKE_ID = 0;
-    const uint8_t UNCHOKE_ID = 1;
-    const uint8_t INTERESTED_ID = 2;
-    const uint8_t NOTINTERESTED_ID = 3;
-    const uint8_t HAVE_ID = 4;
-    const uint8_t BITFIELD_ID = 5;
-    const uint8_t REQUEST_ID = 6;
-    const uint8_t PIECE_ID = 7;
-    const uint8_t CANCEL_ID = 8;
-    const uint8_t PORT_ID = 9;
-    const int HAVE_LENGTH = 5;
-    const int REQUEST_LENGTH = 13;
+    static const uint8_t CHOKE_ID = 0;
+    static const uint8_t UNCHOKE_ID = 1;
+    static const uint8_t INTERESTED_ID = 2;
+    static const uint8_t NOTINTERESTED_ID = 3;
+    static const uint8_t HAVE_ID = 4;
+    static const uint8_t BITFIELD_ID = 5;
+    static const uint8_t REQUEST_ID = 6;
+    static const uint8_t PIECE_ID = 7;
+    static const uint8_t CANCEL_ID = 8;
+    static const uint8_t PORT_ID = 9;
+    static const int HAVE_LENGTH = 5;
+    static const int REQUEST_LENGTH = 13;
 
     // Holds data that is recv'd on the wire. Because we use nonblocking sockets,
     // we need buffers for each peer that will be held as long as a message is not read completely in a single recv.
@@ -299,7 +300,6 @@ namespace Messages
             this->index = index;
             this->begin = begin;
             this->length = length;
-
             total_length = REQUEST_LENGTH + sizeof(len);
         }
 
@@ -335,16 +335,16 @@ namespace Messages
             memcpy(buff->ptr.get() + idx, &id, sizeof(id));
             idx += sizeof(id);
 
-
             uint32_t big_endian_index = htonl(index);
+            uint32_t big_endian_begin = htonl(begin);
+            uint32_t big_endian_length = htonl(length);
+
             memcpy(buff->ptr.get() + idx, &big_endian_index, sizeof(big_endian_index));
             idx += sizeof(big_endian_index);
 
-            uint32_t big_endian_begin = htonl(len);
             memcpy(buff->ptr.get() + idx, &big_endian_begin, sizeof(big_endian_begin));
             idx += sizeof(big_endian_begin);
 
-            uint32_t big_endian_length = htonl(len);
             memcpy(buff->ptr.get() + idx, &big_endian_length, sizeof(big_endian_length));
             idx += sizeof(big_endian_length);
  
@@ -360,11 +360,6 @@ namespace Messages
 
     // interpret data stored in the buffer as a bitfield message
     // returns a bitfield struct as defined in file.h
-    File::BitField *parseBitField(Buffer *buff);
-
-    // Pack a bitfield into a buffer
-    Buffer bitFieldToBuffer(File::BitField bitfield);
-
 }
 
 #endif

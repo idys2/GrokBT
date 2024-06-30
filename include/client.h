@@ -17,6 +17,8 @@ namespace Client {
 
 	// get a unique peer id string given the client ID provided. This is done in the Azureus styling.
     std::string unique_peer_id(std::string client_id);
+
+	// hash a block
 }
 
 #endif
