@@ -11,8 +11,8 @@
 #include "file.h"
 
 namespace Peer
-{   
-    
+{
+
     struct PeerClient
     {
         int socket;           // the peer's socket
@@ -27,8 +27,11 @@ namespace Peer
         bool connected;  // did we connect to this peer yet?
         bool reading;    // is this peer in the middle of sending a message?
 
-        Messages::Buffer *buffer; // this peer's buffer that stores bytes for an incoming message
-        File::BitField *peer_bitfield;  // this peer's bitfield
+        int outgoing_requests; // the number of requests that we do not have pieces for yet.
+                               // We will maintain a const number of outgoing requests.
+
+        Messages::Buffer *buffer;      // this peer's buffer that stores bytes for an incoming message
+        File::BitField *peer_bitfield; // this peer's bitfield
 
         sockaddr_in sockaddr;                                               // this peer's socket address
         PeerClient(std::string peer_id_str, std::string ip_addr, int port); // overload for dictionary mode

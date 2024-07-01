@@ -189,8 +189,6 @@ namespace File
         name = std::get<std::string>(info_dict["name"]);
         length = std::get<long long>(info_dict["length"]);
 
-        std::cout << length << std::endl;
-
         num_pieces = pieces.length() / 20; // pieces is a concatenation of 20 byte hashes, so divide by 20 to number of pieces
         piece_vec = std::vector<Piece>();
         piece_bitfield = std::make_unique<BitField>(num_pieces);

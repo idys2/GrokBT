@@ -18,6 +18,7 @@ namespace Peer
         buffer = nullptr;
         peer_bitfield = nullptr;
         reading = false;
+        outgoing_requests = 0;
     }
 
     PeerClient::PeerClient(uint32_t ip_addr, uint16_t p)
@@ -37,6 +38,7 @@ namespace Peer
         buffer = nullptr;
         peer_bitfield = nullptr;
         reading = false;
+        outgoing_requests = 0;
     }
 
     std::string PeerClient::to_string()

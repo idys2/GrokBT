@@ -110,6 +110,117 @@ int main(int argc, char *argv[])
             // any client that responded is now connected
             // now we need to handshake
 
+            if (pfds[i].revents & POLLOUT)
+            {
+                // verify that we're connected
+                int error = 0;
+                socklen_t len = sizeof(error);
+                int retval = getsockopt(pfds[i].fd, SOL_SOCKET, SO_ERROR, &error, &len);
+
+                // if we haven't handshake with this peer yet, send handshake
+                if (retval == 0 && !peers[i].sent_shake)
+                {
+                    Messages::Handshake client_handshake = Messages::Handshake(19, "BitTorrent protocol", info_hash, client_id);
+                    Messages::Buffer *buff = client_handshake.pack();
+
+                    // send the buffer over the wire
+                    uint32_t remaining_bytes = buff->total_length;
+                    assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+                    delete buff;
+
+                    peers[i].sent_shake = true;
+                }
+
+                // if we arent already interested in this peer, see if we got their bitfield
+                // then check if they have any pieces we need. If they do, then send an interested message
+                else if (retval == 0 && peers[i].peer_bitfield != nullptr && !peers[i].am_interested)
+                {
+                    int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
+
+                    // we need a piece from this peer, so send interested
+                    if (match_idx != -1)
+                    {
+                        Messages::Interested interested_msg = Messages::Interested();
+                        Messages::Buffer *buff = interested_msg.pack();
+
+                        uint32_t remaining_bytes = buff->total_length;
+                        assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+
+                        delete buff;
+                        peers[i].am_interested = true;
+
+                        std::cout << "sent interested" << std::endl;
+                    }
+                }
+
+                // if we are interested in this peer, see if they still have any pieces we need
+                // if they dont, update by sending not interested. If they do, send requests if we arent choked
+                else if (retval == 0 && peers[i].peer_bitfield != nullptr && peers[i].am_interested && !peers[i].peer_choking)
+                {
+                    int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
+
+                    // we should be notinterested, so sent this message to our peer
+                    if (match_idx == -1)
+                    {
+                        Messages::NotInterested notinterested_msg = Messages::NotInterested();
+                        Messages::Buffer *buff = notinterested_msg.pack();
+
+                        uint32_t remaining_bytes = buff->total_length;
+                        assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+
+                        delete buff;
+                        peers[i].am_interested = false;
+                        std::cout << "sent notinterested" << std::endl;
+                    }
+
+                    // peer still has pieces we need, so send requests (number of reqs based on args)
+                    // try to maintain 10 requests outgoing for this peer.
+                    else
+                    {
+                        // if block queue is empty, try to refresh
+                        // this might overload peer with requests
+                        
+                        if (torrent.block_queue.empty())
+                        {
+                            torrent.update_block_queue();
+                        }
+                        
+                        // send at most request_queue_size requests
+                        while (!torrent.block_queue.empty() && peers[i].outgoing_requests < request_queue_size)
+                        {
+                            File::Block block = torrent.block_queue.front();
+                            Messages::Request request = Messages::Request(block.index, block.begin, block.length);
+                            Messages::Buffer *buff = request.pack();
+                            uint32_t remaining_bytes = buff->total_length;
+                            assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+
+                            std::cout << "sent request: " << block.to_string() << std::endl;
+
+                            delete buff;
+                            peers[i].outgoing_requests++;
+                            torrent.block_queue.pop();
+                        }
+                    }
+                    
+                }
+
+                // if peer refuses/resets the connection,
+                // set their socket to not be polled
+                if (retval != 0)
+                {
+                    std::cout << "getsockopt failed" << std::endl;
+                    std::cout << strerror(retval) << std::endl;
+                    pfds[i].fd = -1;
+                }
+
+                if (error != 0)
+                {
+                    std::cout << "getsockopt error" << std::endl;
+                    std::cout << strerror(error) << std::endl;
+                    pfds[i].fd = -1;
+                }
+            }
+
             // ready to read on the peer socket
             if (pfds[i].revents & POLLIN)
             {
@@ -274,6 +385,7 @@ int main(int argc, char *argv[])
                         case Messages::PIECE_ID:
                         {
                             // std::cout << "got piece" << std::endl;
+                            peers[i].outgoing_requests--;
                             torrent.write_block(peers[i].buffer);
                             break;
                         }
@@ -286,123 +398,9 @@ int main(int argc, char *argv[])
                     peers[i].reading = false;
                 }
             }
-
-            if (pfds[i].revents & POLLOUT)
-            {
-                // verify that we're connected
-                int error = 0;
-                socklen_t len = sizeof(error);
-                int retval = getsockopt(pfds[i].fd, SOL_SOCKET, SO_ERROR, &error, &len);
-
-                // if we haven't handshake with this peer yet, send handshake
-                if (retval == 0 && !peers[i].sent_shake)
-                {
-                    Messages::Handshake client_handshake = Messages::Handshake(19, "BitTorrent protocol", info_hash, client_id);
-                    Messages::Buffer *buff = client_handshake.pack();
-
-                    // send the buffer over the wire
-                    uint32_t remaining_bytes = buff->total_length;
-                    assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
-                    delete buff;
-
-                    peers[i].sent_shake = true;
-                }
-
-                // if we arent already interested in this peer, see if we got their bitfield
-                // then check if they have any pieces we need. If they do, then send an interested message
-                else if (retval == 0 && peers[i].peer_bitfield != nullptr && !peers[i].am_interested)
-                {
-                    int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
-
-                    // we need a piece from this peer, so send interested
-                    if (match_idx != -1)
-                    {
-                        Messages::Interested interested_msg = Messages::Interested();
-                        Messages::Buffer *buff = interested_msg.pack();
-
-                        uint32_t remaining_bytes = buff->total_length;
-                        assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
-
-                        delete buff;
-                        peers[i].am_interested = true;
-
-                        std::cout << "sent interested" << std::endl;
-                    }
-                }
-
-                // if we are interested in this peer, see if they still have any pieces we need
-                // if they dont, update by sending not interested. If they do, send requests if we arent choked
-                else if (retval == 0 && peers[i].peer_bitfield != nullptr && peers[i].am_interested && !peers[i].peer_choking)
-                {
-                    int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
-
-                    // we should be notinterested, so sent this message to our peer
-                    if (match_idx == -1)
-                    {
-                        Messages::NotInterested notinterested_msg = Messages::NotInterested();
-                        Messages::Buffer *buff = notinterested_msg.pack();
-
-                        uint32_t remaining_bytes = buff->total_length;
-                        assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
-
-                        delete buff;
-                        peers[i].am_interested = false;
-                        std::cout << "sent notinterested" << std::endl;
-                    }
-
-                    // peer still has pieces we need, so send requests (number of reqs based on args)
-                    else
-                    {
-                        int num_requests = 0;
-
-                        // if block queue is empty, try to refresh
-                        // this might overload peer with requests
-                        
-                        if (torrent.block_queue.empty())
-                        {
-                            torrent.update_block_queue();
-                        }
-                        
-
-                        // send at most request_queue_size requests
-                        while (!torrent.block_queue.empty() && num_requests < request_queue_size)
-                        {
-                            File::Block block = torrent.block_queue.front();
-                            Messages::Request request = Messages::Request(block.index, block.begin, block.length);
-                            Messages::Buffer *buff = request.pack();
-                            uint32_t remaining_bytes = buff->total_length;
-                            assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
-
-                            std::cout << "sent request: " << block.to_string() << std::endl;
-
-                            delete buff;
-                            num_requests++;
-                            torrent.block_queue.pop();
-                        }
-                    }
-                    
-                }
-
-                // if peer refuses/resets the connection,
-                // set their socket to not be polled
-                if (retval != 0)
-                {
-                    std::cout << "getsockopt failed" << std::endl;
-                    std::cout << strerror(retval) << std::endl;
-                    pfds[i].fd = -1;
-                }
-
-                if (error != 0)
-                {
-                    std::cout << "getsockopt error" << std::endl;
-                    std::cout << strerror(error) << std::endl;
-                    pfds[i].fd = -1;
-                }
-            }
         }
 
         // check if the torrent is done, all pieces in piece bitfield are flipped
-        // if they are, write the file to the output
         if (torrent.piece_bitfield->all_flipped())
         {
             std::cout << "done with torrent" << std::endl;
