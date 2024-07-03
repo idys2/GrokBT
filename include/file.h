@@ -14,8 +14,6 @@
 
 namespace File
 {
-	static sha1sum_ctx *ctx = sha1sum_create(NULL, 0);
-
 	// A bitfield used in the bittorrent protocol. Wraps a vector of bytes.
 	struct BitField
 	{
@@ -126,17 +124,19 @@ namespace File
 	class SingleFileTorrent : public Torrent
 	{
 	private:
-		std::string name;	 // the name of the file being torrented
-		long long length;	 // the length of the file in bytes
 		uint32_t num_pieces; // the number of pieces in this torrent
-
+		std::string name;	 // the name of the file being torrented
 		std::vector<Piece> piece_vec; // vector of pieces, indexed by piece indices
+		std::ofstream out_stream; 		// the file stream that this torrent should write out to
+
 	public:
 		std::unique_ptr<BitField> piece_bitfield; // bitfield of pieces. Used for fast intersection with peer bitfields
 		std::queue<Block> block_queue;			  // queue of block requests that we are currently trying to make
+		uint32_t downloaded;						// the number of bytes downloaded for this torrent
+		uint32_t uploaded; 							// the number of bytes uploaded for this torrent
+		long long length;	 // the length of the file in bytes
 
-		std::ofstream out_stream; 		// the file stream that this torrent should write out to
-		SingleFileTorrent(std::string metainfo_buffer, std::string out_file);
+		SingleFileTorrent(std::string metainfo_buffer);
 
 		// Get all unfinished blocks from all unfinished piece vectors,
 		// and place these into the block queue

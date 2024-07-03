@@ -23,7 +23,8 @@ namespace File
         bits = std::vector<uint8_t>(num_bytes, 0);
 
         // read bitfield data from after the len and id fields
-        for (int i = 0; i < num_bytes; i++)
+        // note that we only care about the number of bits, not the number of bytes
+        for (int i = 0; i < num_bits; i++)
         {
             bits[i] = (buff->ptr.get() + idx)[i];
         }
@@ -178,20 +179,23 @@ namespace File
         pieces = std::get<std::string>(info_dict["pieces"]);
     }
 
-    SingleFileTorrent::SingleFileTorrent(std::string metainfo_buffer, std::string out_file) : Torrent(metainfo_buffer)
+    SingleFileTorrent::SingleFileTorrent(std::string metainfo_buffer) : Torrent(metainfo_buffer)
     {   
-        out_stream = std::ofstream(out_file);
-
         bencode::data data = bencode::decode(metainfo_buffer);
         auto metainfo_dict = std::get<bencode::dict>(data);
         auto info_dict = std::get<bencode::dict>(metainfo_dict["info"]);
 
         name = std::get<std::string>(info_dict["name"]);
         length = std::get<long long>(info_dict["length"]);
+        out_stream = std::ofstream(name);
 
         num_pieces = pieces.length() / 20; // pieces is a concatenation of 20 byte hashes, so divide by 20 to number of pieces
         piece_vec = std::vector<Piece>();
         piece_bitfield = std::make_unique<BitField>(num_pieces);
+
+        // init tracking stats
+        downloaded = 0;
+        uploaded = 0;
 
         for (int i = 0; i < num_pieces - 1; i++)
         {
@@ -252,7 +256,7 @@ namespace File
         // check that the piece conforms to a block that we requested
         uint32_t data_len = len - sizeof(index) - sizeof(begin) - sizeof(id);
         bool within_bounds = begin + data_len <= piece_vec[index].piece_size;
-        if (within_bounds)
+        if (within_bounds && piece_vec[index].data != nullptr)
         {
             uint32_t block_index = begin / Piece::block_size;                             // the index of the block that we are writing
             memcpy(piece_vec[index].data.get() + begin, buff->ptr.get() + idx, data_len); // write the block to the piece's buffer
@@ -261,15 +265,9 @@ namespace File
             // if the piece is now finished, check the hash of the piece
             if (piece_vec[index].block_bitfield->all_flipped())
             {
-                char checksum[20];
-                int error = sha1sum_finish(File::ctx, piece_vec[index].data.get(), piece_vec[index].piece_size, (uint8_t *)checksum);
-                assert(!error);
-                assert(sha1sum_reset(File::ctx) == 0);
-
-                // if checksum doesn't match the piece hash, then unflip all the block bits so that the client knows
-                // that we still need to make these requests.
-                std::string checksum_str = std::string(checksum, 20);
-                if (checksum_str != piece_vec[index].piece_hash)
+                std::string piece_data = std::string((const char *) piece_vec[index].data.get(), piece_vec[index].piece_size);
+                std::string down_piece_hash = Hash::truncated_sha1_hash(piece_data, 20);
+                if (down_piece_hash != piece_vec[index].piece_hash)
                 {
                     std::cout << "piece hash did not match" << std::endl;
                     // unflip all bits
@@ -279,9 +277,10 @@ namespace File
                     }
                 }
 
-                // if piece hash matches, then we can just write this piece to 
+                // if piece hash matches, then we can just write this piece to out
                 else
                 {
+                    downloaded += piece_vec[index].piece_size;
                     piece_bitfield->set_bit(index);
                     std::cout << "piece hash matched, writing to out" << std::endl;
 
@@ -289,6 +288,10 @@ namespace File
                     uint32_t start_byte = index * piece_length;
                     out_stream.seekp(start_byte, std::ios::beg);
                     out_stream.write(reinterpret_cast<char *>(piece_vec[index].data.get()), piece_vec[index].piece_size);
+
+                    // free the piece data from memory
+                    piece_vec[index].data.reset();
+
                 }
             }
         }

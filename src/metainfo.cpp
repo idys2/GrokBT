@@ -48,15 +48,5 @@ namespace Metainfo
 
         return "";
     }
-
-    std::string hash_info_dict_str(std::string info_dict_str)
-    {
-        char checksum[20];
-        int error = sha1sum_finish(ctx, (const uint8_t *)info_dict_str.c_str(), info_dict_str.length(), (uint8_t *)checksum);
-        assert(!error);
-        assert(sha1sum_reset(ctx) == 0);
-
-        return std::string(checksum, 20);
-    }
-
+    
 }

@@ -11,12 +11,8 @@ namespace Client
         std::string input = pid_str + timestamp_str;
 
         // we only use 20 characters at most for the peer ID
-        char checksum[20];
-        int error = sha1sum_finish(ctx, (const uint8_t *)input.c_str(), input.length(), (uint8_t *)checksum);
-        assert(!error);
-        assert(sha1sum_reset(ctx) == 0);
-
-        std::string unique_hash = std::string(checksum, 12); // 6 bytes from client_id, + 2 for guards. We take 12 bytes from the hash
+        // only 12 of the characters must be unique
+        std::string unique_hash = Hash::truncated_sha1_hash(input, 12);
         peer_id += unique_hash;
         assert(peer_id.length() == 20);
 

@@ -46,33 +46,6 @@ namespace TrackerProtocol
         return tracker_addr_ret;
     }
 
-    // Split a string on a delimiter sequence into a list of std::strings
-    // this function helps parse HTTP responses into fields based on CRLF="\r\n"
-    std::vector<std::string> split(std::string input, std::string delimiter)
-    {
-        std::vector<std::string> tokens;
-
-        std::string token;
-        size_t last_break_end = 0;
-        size_t found_pos = input.find(delimiter, last_break_end);
-        // find delimiter in the string, substring input between
-        // last occurrenace of the delimiter and new occurrence
-        // add as token
-        while (found_pos != std::string::npos)
-        {
-            size_t substr_len = found_pos - last_break_end + 1;
-            std::string token = input.substr(last_break_end, substr_len);
-            tokens.push_back(token);
-            last_break_end = found_pos + delimiter.length(); // need to advance past the delimiter
-            found_pos = input.find(delimiter, last_break_end);
-        }
-
-        // add last token, which should run from last_break_end to end of std::string
-        tokens.push_back(input.substr(last_break_end, std::string::npos));
-
-        return tokens;
-    }
-
     TrackerManager::TrackerManager(std::string torrent_file, std::string p_id, int c_port)
     {
         // parse metafile and obtain announce url
@@ -81,7 +54,7 @@ namespace TrackerProtocol
 
         // set all fields on creation
         announce_url = Metainfo::read_announce_url(metainfo);
-        info_hash = Metainfo::hash_info_dict_str(info_dict);
+        info_hash = Hash::truncated_sha1_hash(info_dict, 20);
         peer_id = p_id;
         client_port = c_port;
         uploaded = "0";
@@ -98,6 +71,8 @@ namespace TrackerProtocol
 
         int connected = connect(sock, (sockaddr *)&tracker_addr, sizeof(sockaddr_in));
         assert(connected >= 0);
+
+        sent_completed = false;
     }
 
     // Function to craft HTTP GET request using the provided fields
@@ -184,6 +159,34 @@ namespace TrackerProtocol
 
     void TrackerManager::recv_http()
     {
+
+        // Split a string on a delimiter sequence into a list of std::strings
+        // this function helps parse HTTP responses into fields based on CRLF="\r\n"
+        auto split = [] (std::string input, std::string delimiter)
+        {
+            std::vector<std::string> tokens;
+
+            std::string token;
+            size_t last_break_end = 0;
+            size_t found_pos = input.find(delimiter, last_break_end);
+            // find delimiter in the string, substring input between
+            // last occurrenace of the delimiter and new occurrence
+            // add as token
+            while (found_pos != std::string::npos)
+            {
+                size_t substr_len = found_pos - last_break_end + 1;
+                std::string token = input.substr(last_break_end, substr_len);
+                tokens.push_back(token);
+                last_break_end = found_pos + delimiter.length(); // need to advance past the delimiter
+                found_pos = input.find(delimiter, last_break_end);
+            }
+
+            // add last token, which should run from last_break_end to end of std::string
+            tokens.push_back(input.substr(last_break_end, std::string::npos));
+
+            return tokens;
+        };
+
         char buffer[HTTP_HEADER_MAX_SIZE];
         int response_code = 0;
         int payload_length = 0;

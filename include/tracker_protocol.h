@@ -16,10 +16,6 @@ namespace TrackerProtocol {
 	
 	sockaddr_in get_tracker_addr(const std::string announce_url);
 
-    // Split a string on a delimiter sequence into a list of std::strings
-	// this function helps parse HTTP responses into fields based on CRLF="\r\n"
-	std::vector<std::string> split(std::string input, std::string delimiter);
-
     // Event types for a tracker request that is sent by the client -> tracker
 	enum EventType {
 		STARTED, 
@@ -57,6 +53,9 @@ namespace TrackerProtocol {
 		// tcp stuff 
 		int sock;
 		sockaddr_in tracker_addr;
+
+		// bool flags for state
+		bool sent_completed;
 
 		TrackerManager(std::string torrent_file, std::string p_id, int c_port);
 

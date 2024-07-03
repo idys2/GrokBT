@@ -18,6 +18,7 @@
 #include "tracker_protocol.h"
 #include "tcp_utils.h"
 #include "file.h"
+#include "hash.h"
 
 int main(int argc, char *argv[])
 {
@@ -29,14 +30,12 @@ int main(int argc, char *argv[])
     int port;
     int timeout;
     int request_queue_size;
-    std::string out_file;
 
     program.add_argument("-f").default_value("debian1.torrent").store_into(torrent_file);
     program.add_argument("-id").default_value("EZ6969").store_into(client_id);
     program.add_argument("-p").default_value(6881).store_into(port);
     program.add_argument("-t").default_value(120 * 1000).store_into(timeout); // default timeout to 2 minutes
     program.add_argument("-q").default_value(10).store_into(request_queue_size);
-    program.add_argument("-o").default_value(torrent_file + ".out").store_into(out_file);
 
     try
     {
@@ -64,12 +63,12 @@ int main(int argc, char *argv[])
 
     std::cout << "Got " << fd_count << " peers." << std::endl;
 
-    // get info hash
+    // get 20 byte info hash
     std::string metainfo_buffer = Metainfo::read_metainfo_to_buffer(torrent_file);
     std::string info_dict_str = Metainfo::read_info_dict_str(metainfo_buffer);
-    std::string info_hash = Metainfo::hash_info_dict_str(info_dict_str);
+    std::string info_hash = Hash::truncated_sha1_hash(info_dict_str, 20);
 
-    File::SingleFileTorrent torrent = File::SingleFileTorrent(metainfo_buffer, out_file);
+    File::SingleFileTorrent torrent = File::SingleFileTorrent(metainfo_buffer);
 
     // create socket for all peers, and set to nonblocking
     // connect on these sockets
@@ -159,7 +158,7 @@ int main(int argc, char *argv[])
                 {
                     int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
 
-                    // we should be notinterested, so sent this message to our peer
+                    // we should be notinterested, so send this message to our peer
                     if (match_idx == -1)
                     {
                         Messages::NotInterested notinterested_msg = Messages::NotInterested();
@@ -179,12 +178,12 @@ int main(int argc, char *argv[])
                     {
                         // if block queue is empty, try to refresh
                         // this might overload peer with requests
-                        
+
                         if (torrent.block_queue.empty())
                         {
                             torrent.update_block_queue();
                         }
-                        
+
                         // send at most request_queue_size requests
                         while (!torrent.block_queue.empty() && peers[i].outgoing_requests < request_queue_size)
                         {
@@ -201,7 +200,6 @@ int main(int argc, char *argv[])
                             torrent.block_queue.pop();
                         }
                     }
-                    
                 }
 
                 // if peer refuses/resets the connection,
@@ -403,8 +401,18 @@ int main(int argc, char *argv[])
         // check if the torrent is done, all pieces in piece bitfield are flipped
         if (torrent.piece_bitfield->all_flipped())
         {
-            std::cout << "done with torrent" << std::endl;
-            break;
+            if (!tracker.sent_completed)
+            {
+                std::cout << "done with torrent" << std::endl;
+                // send a completed message
+                tracker.event = TrackerProtocol::EventType::COMPLETED;
+                tracker.downloaded = std::to_string(torrent.downloaded);
+                tracker.uploaded = std::to_string(torrent.uploaded);
+                tracker.left = std::to_string(torrent.length - torrent.downloaded);
+                tracker.send_http();
+
+                tracker.sent_completed = true;
+            }
         }
     }
 
