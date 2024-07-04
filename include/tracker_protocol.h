@@ -45,6 +45,7 @@ namespace TrackerProtocol {
 		std::string tracker_id;  
 
 		int interval;  
+		int min_interval;
 		int num_seeders;  
 		int num_leechers;  
 		

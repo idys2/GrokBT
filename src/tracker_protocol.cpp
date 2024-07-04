@@ -64,6 +64,7 @@ namespace TrackerProtocol
         no_peer_id = 0;
         event = EventType::STARTED;
         tracker_addr = get_tracker_addr(announce_url);
+        tracker_id = "";
 
         // get socket set up
         sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -136,11 +137,17 @@ namespace TrackerProtocol
             break;
         }
 
+        // add tracker id
+        if(tracker_id != "") {
+            request += "tracker id=" + tracker_id + "&";
+        }
+
         // add HTTP version
         request += " HTTP/1.1\r\n";
 
         // add host std::string
         request += "Host: " + host_url + "\r\n\r\n";
+
 
         free(url_encoded_info);
         free(url_encoded_peer_id);
@@ -162,7 +169,7 @@ namespace TrackerProtocol
 
         // Split a string on a delimiter sequence into a list of std::strings
         // this function helps parse HTTP responses into fields based on CRLF="\r\n"
-        auto split = [] (std::string input, std::string delimiter)
+        auto split = [](std::string input, std::string delimiter)
         {
             std::vector<std::string> tokens;
 

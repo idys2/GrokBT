@@ -4,7 +4,7 @@
 namespace File
 {
 
-    BitField::BitField(Messages::Buffer *buff)
+    BitField::BitField(Messages::Buffer *buff, uint32_t num_bits)
     {
         // read len and id fields from the buffer
         uint32_t len;
@@ -18,13 +18,13 @@ namespace File
         memcpy(&id, buff->ptr.get() + idx, sizeof(id));
         idx += sizeof(id);
 
-        num_bits = len - sizeof(id);
-        num_bytes = std::ceil((double)num_bits / 8.0); // we can have extra trailing bits at the end
+        // need to pass in number of bits, because we only get the number of bytes from the bitfield message
+        this->num_bits = num_bits;
+        num_bytes = len - sizeof(id);
         bits = std::vector<uint8_t>(num_bytes, 0);
 
         // read bitfield data from after the len and id fields
-        // note that we only care about the number of bits, not the number of bytes
-        for (int i = 0; i < num_bits; i++)
+        for (int i = 0; i < num_bytes; i++)
         {
             bits[i] = (buff->ptr.get() + idx)[i];
         }

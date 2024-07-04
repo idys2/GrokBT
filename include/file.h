@@ -21,7 +21,7 @@ namespace File
 		uint32_t num_bits;		   // the size of the bitfield. This field is needed because some bits will be unused
 
 		// Construct a bitfield by interpreting a buffer as a bitfield message
-		BitField(Messages::Buffer *buff);
+		BitField(Messages::Buffer *buff, uint32_t num_bits);
 
 		// Initialize a bit field that can hold num_bits number of bits, all unflipped
 		BitField(uint32_t num_bits);
@@ -124,12 +124,13 @@ namespace File
 	class SingleFileTorrent : public Torrent
 	{
 	private:
-		uint32_t num_pieces; // the number of pieces in this torrent
 		std::string name;	 // the name of the file being torrented
 		std::vector<Piece> piece_vec; // vector of pieces, indexed by piece indices
 		std::ofstream out_stream; 		// the file stream that this torrent should write out to
 
 	public:
+		uint32_t num_pieces; // the number of pieces in this torrent
+		
 		std::unique_ptr<BitField> piece_bitfield; // bitfield of pieces. Used for fast intersection with peer bitfields
 		std::queue<Block> block_queue;			  // queue of block requests that we are currently trying to make
 		uint32_t downloaded;						// the number of bytes downloaded for this torrent

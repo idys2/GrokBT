@@ -56,6 +56,8 @@ int main(int argc, char *argv[])
     tracker.send_http();
     tracker.recv_http();
 
+    std::cout << tracker.tracker_id << std::endl;
+
     // get all base peers from the tracker
     std::vector<Peer::PeerClient> peers = tracker.peers;
     int fd_count = peers.size();
@@ -371,7 +373,7 @@ int main(int argc, char *argv[])
                         case Messages::BITFIELD_ID:
                         {
                             std::cout << "got bitfield" << std::endl;
-                            peers[i].peer_bitfield = new File::BitField(peers[i].buffer);
+                            peers[i].peer_bitfield = new File::BitField(peers[i].buffer, torrent.num_pieces);
                             break;
                         }
 
@@ -410,6 +412,7 @@ int main(int argc, char *argv[])
                 tracker.uploaded = std::to_string(torrent.uploaded);
                 tracker.left = std::to_string(torrent.length - torrent.downloaded);
                 tracker.send_http();
+                // tracker.recv_http() 
 
                 tracker.sent_completed = true;
             }
