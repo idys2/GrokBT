@@ -45,7 +45,7 @@ add_library(TorrentModule
             src/client.cpp 
             src/hash.cpp 
             src/tracker_protocol.cpp
-            src/tcp_utils.cpp
+            src/net_utils.cpp
             src/peer.cpp
             src/metainfo.cpp
             src/message.cpp

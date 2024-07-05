@@ -7,7 +7,7 @@
 #include "bencode_wrapper.hpp"
 #include "peer.h"
 #include "metainfo.h"
-#include "tcp_utils.h"
+#include "net_utils.h"
 
 namespace TrackerProtocol {
     const int HTTP_HEADER_MAX_SIZE = 10 * 1024; // set an arbitrary maximum size for an HTTP header from tracker

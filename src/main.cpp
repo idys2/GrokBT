@@ -16,26 +16,32 @@
 #include "message.h"
 #include "metainfo.h"
 #include "tracker_protocol.h"
-#include "tcp_utils.h"
+#include "net_utils.h"
 #include "file.h"
 #include "hash.h"
 
 int main(int argc, char *argv[])
 {
     // get arguments from command line
-
     argparse::ArgumentParser program("client");
     std::string torrent_file;
     std::string client_id;
     int port;
     int timeout;
     int request_queue_size;
+    int listen_queue_size;
+
+    int newfd;
+    sockaddr_in remoteaddr;
+    socklen_t addrlen;
+    sockaddr_in self_addr;
 
     program.add_argument("-f").default_value("debian1.torrent").store_into(torrent_file);
     program.add_argument("-id").default_value("EZ6969").store_into(client_id);
     program.add_argument("-p").default_value(6881).store_into(port);
     program.add_argument("-t").default_value(120 * 1000).store_into(timeout); // default timeout to 2 minutes
     program.add_argument("-q").default_value(10).store_into(request_queue_size);
+    program.add_argument("-lq").default_value(20).store_into(listen_queue_size);
 
     try
     {
@@ -48,33 +54,47 @@ int main(int argc, char *argv[])
         std::exit(1);
     };
 
-    // generate unique peer id
-    std::string peer_id = Client::unique_peer_id(client_id);
+    // get our address
+    self_addr = get_self_sockaddr(port);
 
     // send to tracker, get peers
-    TrackerProtocol::TrackerManager tracker(torrent_file, peer_id, port);
+    TrackerProtocol::TrackerManager tracker(torrent_file, Client::unique_peer_id(client_id), port);
     tracker.send_http();
     tracker.recv_http();
 
-    std::cout << tracker.tracker_id << std::endl;
-
     // get all base peers from the tracker
     std::vector<Peer::PeerClient> peers = tracker.peers;
-    int fd_count = peers.size();
-    pollfd *pfds = new pollfd[fd_count];
 
-    std::cout << "Got " << fd_count << " peers." << std::endl;
+    // remove this client from the peers list
+    // we assume that the peers list contains peers that do not include ourselves
+    peers.erase(std::remove_if(peers.begin(), peers.end(), [&] (Peer::PeerClient peer) { 
+        return peer.sockaddr.sin_addr.s_addr == self_addr.sin_addr.s_addr && 
+                peer.sockaddr.sin_port == self_addr.sin_port; 
+    }), peers.end());
+
+    // remove self from the peer list
+    int fd_count = peers.size() + 1;
+    std::cout << "Got: " << fd_count - 1 << " peers " << std::endl;
+
+    // set up poll vector
+    std::vector<pollfd> pfds = std::vector<pollfd>(fd_count);
 
     // get 20 byte info hash
     std::string metainfo_buffer = Metainfo::read_metainfo_to_buffer(torrent_file);
     std::string info_dict_str = Metainfo::read_info_dict_str(metainfo_buffer);
     std::string info_hash = Hash::truncated_sha1_hash(info_dict_str, 20);
-
     File::SingleFileTorrent torrent = File::SingleFileTorrent(metainfo_buffer);
+
+    // get listener socket
+    int listener = get_listener_socket(port, listen_queue_size);
+
+    // add the listener socket
+    pfds[0].fd = listener;
+    pfds[0].events = POLLIN;
 
     // create socket for all peers, and set to nonblocking
     // connect on these sockets
-    for (int i = 0; i < fd_count; i++)
+    for (int i = 1; i < fd_count; i++)
     {
         // create and set socket to be non blocking
         int peer_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -82,8 +102,8 @@ int main(int argc, char *argv[])
 
         pfds[i].fd = peer_sock;
         pfds[i].events = POLLIN | POLLOUT;
-        peers[i].socket = peer_sock;
-        int connect_ret = connect(peer_sock, (sockaddr *)(&peers[i].sockaddr), sizeof(sockaddr_in));
+        peers[i - 1].socket = peer_sock;
+        int connect_ret = connect(peer_sock, (sockaddr *)(&peers[i - 1].sockaddr), sizeof(sockaddr_in));
 
         // connecting on non blocking sockets should give EINPROGRESS
         if (errno != EINPROGRESS)
@@ -96,20 +116,14 @@ int main(int argc, char *argv[])
     // main poll event loop
     while (true)
     {
-        int poll_peers = poll(pfds, fd_count, timeout);
+        int poll_peers = poll(pfds.data(), fd_count, timeout);
 
         // no peers responded
         // should send another request to tracker
-        if (poll_peers == 0)
-        {
-            break;
-        }
 
         for (int i = 0; i < fd_count; i++)
         {
-
-            // any client that responded is now connected
-            // now we need to handshake
+            int peer_idx = i - 1;
 
             if (pfds[i].revents & POLLOUT)
             {
@@ -119,7 +133,7 @@ int main(int argc, char *argv[])
                 int retval = getsockopt(pfds[i].fd, SOL_SOCKET, SO_ERROR, &error, &len);
 
                 // if we haven't handshake with this peer yet, send handshake
-                if (retval == 0 && !peers[i].sent_shake)
+                if (retval == 0 && !peers[peer_idx].sent_shake)
                 {
                     Messages::Handshake client_handshake = Messages::Handshake(19, "BitTorrent protocol", info_hash, client_id);
                     Messages::Buffer *buff = client_handshake.pack();
@@ -129,14 +143,14 @@ int main(int argc, char *argv[])
                     assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
                     delete buff;
 
-                    peers[i].sent_shake = true;
+                    peers[peer_idx].sent_shake = true;
                 }
 
                 // if we arent already interested in this peer, see if we got their bitfield
                 // then check if they have any pieces we need. If they do, then send an interested message
-                else if (retval == 0 && peers[i].peer_bitfield != nullptr && !peers[i].am_interested)
+                else if (retval == 0 && peers[peer_idx].peer_bitfield != nullptr && !peers[peer_idx].am_interested)
                 {
-                    int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
+                    int match_idx = torrent.piece_bitfield->first_match(peers[peer_idx].peer_bitfield);
 
                     // we need a piece from this peer, so send interested
                     if (match_idx != -1)
@@ -148,7 +162,7 @@ int main(int argc, char *argv[])
                         assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
 
                         delete buff;
-                        peers[i].am_interested = true;
+                        peers[peer_idx].am_interested = true;
 
                         std::cout << "sent interested" << std::endl;
                     }
@@ -156,9 +170,9 @@ int main(int argc, char *argv[])
 
                 // if we are interested in this peer, see if they still have any pieces we need
                 // if they dont, update by sending not interested. If they do, send requests if we arent choked
-                else if (retval == 0 && peers[i].peer_bitfield != nullptr && peers[i].am_interested && !peers[i].peer_choking)
+                else if (retval == 0 && peers[peer_idx].am_interested && !peers[peer_idx].peer_choking)
                 {
-                    int match_idx = torrent.piece_bitfield->first_match(peers[i].peer_bitfield);
+                    int match_idx = torrent.piece_bitfield->first_match(peers[peer_idx].peer_bitfield);
 
                     // we should be notinterested, so send this message to our peer
                     if (match_idx == -1)
@@ -170,7 +184,7 @@ int main(int argc, char *argv[])
                         assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
 
                         delete buff;
-                        peers[i].am_interested = false;
+                        peers[peer_idx].am_interested = false;
                         std::cout << "sent notinterested" << std::endl;
                     }
 
@@ -179,7 +193,6 @@ int main(int argc, char *argv[])
                     else
                     {
                         // if block queue is empty, try to refresh
-                        // this might overload peer with requests
 
                         if (torrent.block_queue.empty())
                         {
@@ -187,7 +200,7 @@ int main(int argc, char *argv[])
                         }
 
                         // send at most request_queue_size requests
-                        while (!torrent.block_queue.empty() && peers[i].outgoing_requests < request_queue_size)
+                        while (!torrent.block_queue.empty() && peers[peer_idx].outgoing_requests < request_queue_size)
                         {
                             File::Block block = torrent.block_queue.front();
                             Messages::Request request = Messages::Request(block.index, block.begin, block.length);
@@ -198,7 +211,7 @@ int main(int argc, char *argv[])
                             std::cout << "sent request: " << block.to_string() << std::endl;
 
                             delete buff;
-                            peers[i].outgoing_requests++;
+                            peers[peer_idx].outgoing_requests++;
                             torrent.block_queue.pop();
                         }
                     }
@@ -221,11 +234,33 @@ int main(int argc, char *argv[])
                 }
             }
 
+            // check if new connections can be made
+            if (pfds[i].revents & POLLIN && pfds[i].fd == listener)
+            {
+                addrlen = sizeof(remoteaddr);
+                newfd = accept(listener, (struct sockaddr *)&remoteaddr, &addrlen);
+
+                // add the new connection to our list
+                if (newfd != -1)
+                {
+                    // set their socket to be non blocking
+                    fcntl(newfd, F_SETFL, O_NONBLOCK);
+                    pfds.push_back(pollfd());
+                    pfds[fd_count].fd = newfd;
+                    pfds[fd_count].events = POLLIN | POLLOUT;
+                    fd_count++;
+
+                    // add a new peer object
+                    peers.push_back(Peer::PeerClient(remoteaddr.sin_addr.s_addr, remoteaddr.sin_port));
+                    std::cout << "connected: " << peers.back().to_string() << std::endl;
+                }
+            }
+
             // ready to read on the peer socket
-            if (pfds[i].revents & POLLIN)
+            else if (pfds[i].revents & POLLIN)
             {
 
-                peers[i].connected |= true;
+                peers[peer_idx].connected |= true;
                 int bytes_recv = 0;
 
                 // peek the recv to see if the connection has closed
@@ -236,33 +271,33 @@ int main(int argc, char *argv[])
                 if (peek_recv == -1)
                 {
                     std::cout << "Recv failed: " << strerror(errno) << std::endl;
+                    std::cout << peers[peer_idx].to_string() << std::endl;
+
                     // stop polling the socket
-                    pfds[i].fd = -1;
+                    // pfds[i].fd = -1;
                 }
 
                 // socket has closed by the peer client
                 else if (peek_recv == 0)
                 {
-                    std::cout << "peer connection closed: " << i << std::endl;
-                    // stop polling this socket
-                    pfds[i].fd = -1;
+                    // std::cout << "peer connection closed: " << i << std::endl;
                 }
 
                 // the peer is sending a continuation of a previous message
                 // place the new bytes in the previously made buffer, and continue
-                else if (peers[i].reading)
+                else if (peers[peer_idx].reading)
                 {
-                    uint32_t total_len = (peers[i].buffer)->total_length;
-                    uint32_t bytes_read = (peers[i].buffer)->bytes_read;
+                    uint32_t total_len = (peers[peer_idx].buffer)->total_length;
+                    uint32_t bytes_read = (peers[peer_idx].buffer)->bytes_read;
 
                     // request the remaining number of bytes
                     // place into ptr + bytes_read
-                    bytes_recv = recv(pfds[i].fd, ((peers[i].buffer)->ptr).get() + bytes_read, total_len - bytes_read, 0);
-                    peers[i].buffer->bytes_read += bytes_recv;
+                    bytes_recv = recv(pfds[i].fd, ((peers[peer_idx].buffer)->ptr).get() + bytes_read, total_len - bytes_read, 0);
+                    peers[peer_idx].buffer->bytes_read += bytes_recv;
                 }
 
                 // peer is sending a new handshake message
-                else if (!peers[i].recv_shake)
+                else if (!peers[peer_idx].recv_shake)
                 {
                     uint8_t pstrlen;
 
@@ -270,21 +305,21 @@ int main(int argc, char *argv[])
                     bytes_recv = recv(pfds[i].fd, &pstrlen, 1, 0);
 
                     // create a buffer for the handshake length
-                    peers[i].buffer = new Messages::Buffer(pstrlen);
+                    peers[peer_idx].buffer = new Messages::Buffer(pstrlen);
 
                     // write pstrlen into the buffer
-                    memcpy(peers[i].buffer->ptr.get(), &pstrlen, sizeof(pstrlen));
-                    (peers[i].buffer)->bytes_read += bytes_recv;
+                    memcpy(peers[peer_idx].buffer->ptr.get(), &pstrlen, sizeof(pstrlen));
+                    (peers[peer_idx].buffer)->bytes_read += bytes_recv;
 
                     // recv for rest of the bytes
-                    bytes_recv = recv(pfds[i].fd, peers[i].buffer->ptr.get() + sizeof(pstrlen), 49 + pstrlen - sizeof(pstrlen), 0);
-                    peers[i].buffer->bytes_read += bytes_recv;
-                    peers[i].reading |= true;
+                    bytes_recv = recv(pfds[i].fd, peers[peer_idx].buffer->ptr.get() + sizeof(pstrlen), 49 + pstrlen - sizeof(pstrlen), 0);
+                    peers[peer_idx].buffer->bytes_read += bytes_recv;
+                    peers[peer_idx].reading |= true;
                 }
 
                 // peer is sending other new messages...
                 // read the first 4 bytes, alloc the buffer, try to recv
-                else if (peers[i].sent_shake && peers[i].recv_shake)
+                else if (peers[peer_idx].sent_shake && peers[peer_idx].recv_shake)
                 {
                     uint32_t len;
                     uint8_t id;
@@ -298,70 +333,70 @@ int main(int argc, char *argv[])
                     {
                         bytes_recv = recv(pfds[i].fd, &id, sizeof(id), 0);
 
-                        peers[i].buffer = new Messages::Buffer(len + 4); // need to include the length field
+                        peers[peer_idx].buffer = new Messages::Buffer(len + 4); // need to include the length field
 
                         // move the pointer when we write
                         int idx = 0;
-                        memcpy(peers[i].buffer->ptr.get() + idx, &len, sizeof(len)); // write len into the buffer
+                        memcpy(peers[peer_idx].buffer->ptr.get() + idx, &len, sizeof(len)); // write len into the buffer
                         idx += sizeof(len);
 
-                        memcpy(peers[i].buffer->ptr.get() + idx, &id, sizeof(id)); // write id into the buffer
+                        memcpy(peers[peer_idx].buffer->ptr.get() + idx, &id, sizeof(id)); // write id into the buffer
                         idx += sizeof(id);
 
-                        (peers[i].buffer)->bytes_read += idx;
+                        (peers[peer_idx].buffer)->bytes_read += idx;
 
                         // recv the payload if theres more
-                        bytes_recv = recv(pfds[i].fd, peers[i].buffer->ptr.get() + idx, len - sizeof(id), 0);
-                        peers[i].buffer->bytes_read += bytes_recv;
-                        peers[i].reading |= true;
+                        bytes_recv = recv(pfds[i].fd, peers[peer_idx].buffer->ptr.get() + idx, len - sizeof(id), 0);
+                        peers[peer_idx].buffer->bytes_read += bytes_recv;
+                        peers[peer_idx].reading |= true;
                     }
                 }
 
                 // if the recv we did for the peer resulted in a completed message.
                 // if so, then unpack the message, free the buffer, set reading to false.
-                bool done_recv = (peers[i].buffer) && (peers[i].buffer)->bytes_read == (peers[i].buffer)->total_length;
+                bool done_recv = (peers[peer_idx].buffer) && (peers[peer_idx].buffer)->bytes_read == (peers[peer_idx].buffer)->total_length;
                 if (done_recv)
                 {
                     uint8_t id_in_buffer;
                     // if no handshake yet, then this must be a handshake message
-                    if (!peers[i].recv_shake)
+                    if (!peers[peer_idx].recv_shake)
                     {
-                        Messages::Handshake peer_handshake = Messages::Handshake(peers[i].buffer);
-                        peers[i].recv_shake = true;
-                        peers[i].peer_id = peer_handshake.get_peer_id();
-                        std::cout << "Handshake successful with: " << peers[i].peer_id << std::endl;
+                        Messages::Handshake peer_handshake = Messages::Handshake(peers[peer_idx].buffer);
+                        peers[peer_idx].recv_shake = true;
+                        peers[peer_idx].peer_id = peer_handshake.get_peer_id();
+                        std::cout << "Handshake successful with: " << peers[peer_idx].peer_id << std::endl;
                     }
 
                     // other messages
                     else
                     {
                         // skip the len field, and read the id
-                        memcpy(&id_in_buffer, peers[i].buffer->ptr.get() + 4, 1);
+                        memcpy(&id_in_buffer, peers[peer_idx].buffer->ptr.get() + 4, 1);
 
                         switch (id_in_buffer)
                         {
                         case Messages::CHOKE_ID:
                         {
-                            peers[i].peer_choking = true;
+                            peers[peer_idx].peer_choking = true;
                             std::cout << "got choke" << std::endl;
                             break;
                         }
 
                         case Messages::UNCHOKE_ID:
                         {
-                            peers[i].peer_choking = false;
+                            peers[peer_idx].peer_choking = false;
                             std::cout << "got unchoke" << std::endl;
                             break;
                         }
                         case Messages::INTERESTED_ID:
                         {
-                            peers[i].peer_interested = true;
+                            peers[peer_idx].peer_interested = true;
                             std::cout << "got interested" << std::endl;
                             break;
                         }
                         case Messages::NOTINTERESTED_ID:
                         {
-                            peers[i].peer_interested = false;
+                            peers[peer_idx].peer_interested = false;
                             std::cout << "got notinterested" << std::endl;
                             break;
                         }
@@ -373,7 +408,7 @@ int main(int argc, char *argv[])
                         case Messages::BITFIELD_ID:
                         {
                             std::cout << "got bitfield" << std::endl;
-                            peers[i].peer_bitfield = new File::BitField(peers[i].buffer, torrent.num_pieces);
+                            peers[peer_idx].peer_bitfield = new File::BitField(peers[peer_idx].buffer, torrent.num_pieces);
                             break;
                         }
 
@@ -385,17 +420,17 @@ int main(int argc, char *argv[])
                         case Messages::PIECE_ID:
                         {
                             // std::cout << "got piece" << std::endl;
-                            peers[i].outgoing_requests--;
-                            torrent.write_block(peers[i].buffer);
+                            peers[peer_idx].outgoing_requests--;
+                            torrent.write_block(peers[peer_idx].buffer);
                             break;
                         }
                         }
                     }
 
                     // clear out buffer
-                    delete peers[i].buffer;
-                    peers[i].buffer = nullptr;
-                    peers[i].reading = false;
+                    delete peers[peer_idx].buffer;
+                    peers[peer_idx].buffer = nullptr;
+                    peers[peer_idx].reading = false;
                 }
             }
         }
@@ -412,14 +447,12 @@ int main(int argc, char *argv[])
                 tracker.uploaded = std::to_string(torrent.uploaded);
                 tracker.left = std::to_string(torrent.length - torrent.downloaded);
                 tracker.send_http();
-                // tracker.recv_http() 
+                // tracker.recv_http()
 
                 tracker.sent_completed = true;
             }
         }
     }
-
-    delete[] pfds;
 
     return 0;
 }

@@ -87,6 +87,10 @@ namespace TrackerProtocol
         char *host;
         rc = curl_url_get(handle, CURLUPART_HOST, &host, 0);
 
+        // get the port of the announce URL
+        char *port;
+        rc = curl_url_get(handle, CURLUPART_PORT, &port, 0);
+
         std::string host_url(host);
 
         // clean up
@@ -144,10 +148,9 @@ namespace TrackerProtocol
 
         // add HTTP version
         request += " HTTP/1.1\r\n";
-
+        request += "User-Agent: NewBT\r\n"; 
         // add host std::string
-        request += "Host: " + host_url + "\r\n\r\n";
-
+        request += "Host: " + host_url + ":" + port + "\r\n\r\n";
 
         free(url_encoded_info);
         free(url_encoded_peer_id);
