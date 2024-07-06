@@ -41,6 +41,22 @@ namespace Peer
         outgoing_requests = 0;
     }
 
+    PeerClient::PeerClient()
+    {
+        am_interested = false;
+        am_choking = true;
+        peer_choking = true;
+        peer_interested = false;
+        recv_shake = false;
+        sent_shake = false;
+        connected = false;
+        peer_id = "";
+        buffer = nullptr;
+        peer_bitfield = nullptr;
+        reading = false;
+        outgoing_requests = 0;
+    }
+
     std::string PeerClient::to_string()
     {
         char str[INET_ADDRSTRLEN];

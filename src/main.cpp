@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
     int listen_queue_size;
 
     int newfd;
-    sockaddr_in remoteaddr;
+    sockaddr_storage remoteaddr;
     socklen_t addrlen;
     sockaddr_in self_addr;
 
@@ -72,9 +72,10 @@ int main(int argc, char *argv[])
                 peer.sockaddr.sin_port == self_addr.sin_port; 
     }), peers.end());
 
+    std::cout << "Got: " << peers.size() << " peers " << std::endl;
+
     // remove self from the peer list
     int fd_count = peers.size() + 1;
-    std::cout << "Got: " << fd_count - 1 << " peers " << std::endl;
 
     // set up poll vector
     std::vector<pollfd> pfds = std::vector<pollfd>(fd_count);
@@ -87,6 +88,7 @@ int main(int argc, char *argv[])
 
     // get listener socket
     int listener = get_listener_socket(port, listen_queue_size);
+    fcntl(listener, F_SETFL, O_NONBLOCK);
 
     // add the listener socket
     pfds[0].fd = listener;
@@ -94,7 +96,7 @@ int main(int argc, char *argv[])
 
     // create socket for all peers, and set to nonblocking
     // connect on these sockets
-    for (int i = 1; i < fd_count; i++)
+    for (int i = 1; i < pfds.size(); i++)
     {
         // create and set socket to be non blocking
         int peer_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -113,15 +115,19 @@ int main(int argc, char *argv[])
         }
     }
 
+    for(Peer::PeerClient peer: peers) {
+        std::cout << peer.socket << std::endl;
+    }
+
     // main poll event loop
     while (true)
     {
-        int poll_peers = poll(pfds.data(), fd_count, timeout);
+        int poll_peers = poll(pfds.data(), pfds.size(), timeout);
 
         // no peers responded
         // should send another request to tracker
 
-        for (int i = 0; i < fd_count; i++)
+        for (int i = 0; i < pfds.size(); i++)
         {
             int peer_idx = i - 1;
 
@@ -238,29 +244,29 @@ int main(int argc, char *argv[])
             if (pfds[i].revents & POLLIN && pfds[i].fd == listener)
             {
                 addrlen = sizeof(remoteaddr);
-                newfd = accept(listener, (struct sockaddr *)&remoteaddr, &addrlen);
+                newfd = accept(listener, (sockaddr *)&remoteaddr, &addrlen);
 
                 // add the new connection to our list
                 if (newfd != -1)
                 {
                     // set their socket to be non blocking
-                    fcntl(newfd, F_SETFL, O_NONBLOCK);
                     pfds.push_back(pollfd());
-                    pfds[fd_count].fd = newfd;
-                    pfds[fd_count].events = POLLIN | POLLOUT;
-                    fd_count++;
-
+                    pfds[pfds.size() - 1].fd = newfd;
+                    pfds[pfds.size() - 1].events = POLLIN | POLLOUT;
                     // add a new peer object
-                    peers.push_back(Peer::PeerClient(remoteaddr.sin_addr.s_addr, remoteaddr.sin_port));
-                    std::cout << "connected: " << peers.back().to_string() << std::endl;
+                    peers.push_back(Peer::PeerClient());
+                    peers[peers.size() - 1].socket = newfd;
+
+                    for(Peer::PeerClient peer: peers) {
+                        std::cout << peer.socket << std::endl;
+                    }
+
                 }
             }
 
             // ready to read on the peer socket
             else if (pfds[i].revents & POLLIN)
             {
-
-                peers[peer_idx].connected |= true;
                 int bytes_recv = 0;
 
                 // peek the recv to see if the connection has closed
@@ -274,13 +280,14 @@ int main(int argc, char *argv[])
                     std::cout << peers[peer_idx].to_string() << std::endl;
 
                     // stop polling the socket
-                    // pfds[i].fd = -1;
+                    pfds[i].fd = -1;
                 }
 
                 // socket has closed by the peer client
                 else if (peek_recv == 0)
                 {
-                    // std::cout << "peer connection closed: " << i << std::endl;
+                    std::cout << "peer connection closed: " << i << std::endl;
+                    pfds[i].fd = -1;
                 }
 
                 // the peer is sending a continuation of a previous message
@@ -361,10 +368,21 @@ int main(int argc, char *argv[])
                     // if no handshake yet, then this must be a handshake message
                     if (!peers[peer_idx].recv_shake)
                     {
+
+
                         Messages::Handshake peer_handshake = Messages::Handshake(peers[peer_idx].buffer);
                         peers[peer_idx].recv_shake = true;
                         peers[peer_idx].peer_id = peer_handshake.get_peer_id();
-                        std::cout << "Handshake successful with: " << peers[peer_idx].peer_id << std::endl;
+                        std::cout << "Handshake: " << peer_handshake.get_peer_id() << std::endl;
+
+                        // if info hash does not match, then we need to close
+                        if(peer_handshake.get_info_hash() != info_hash) {
+                            pfds[peer_idx].fd = -1;
+                            peers[peer_idx].recv_shake = false;
+                            close(pfds[peer_idx].fd);
+
+                            std::cout << "Handshake failed" << std::endl;
+                        }
                     }
 
                     // other messages
@@ -419,7 +437,6 @@ int main(int argc, char *argv[])
                         }
                         case Messages::PIECE_ID:
                         {
-                            // std::cout << "got piece" << std::endl;
                             peers[peer_idx].outgoing_requests--;
                             torrent.write_block(peers[peer_idx].buffer);
                             break;
@@ -447,8 +464,6 @@ int main(int argc, char *argv[])
                 tracker.uploaded = std::to_string(torrent.uploaded);
                 tracker.left = std::to_string(torrent.length - torrent.downloaded);
                 tracker.send_http();
-                // tracker.recv_http()
-
                 tracker.sent_completed = true;
             }
         }

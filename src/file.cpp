@@ -290,7 +290,7 @@ namespace File
                     out_stream.write(reinterpret_cast<char *>(piece_vec[index].data.get()), piece_vec[index].piece_size);
 
                     // free the piece data from memory
-                    piece_vec[index].data.reset();
+                    // piece_vec[index].data.reset();
 
                 }
             }

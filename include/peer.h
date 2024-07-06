@@ -36,6 +36,7 @@ namespace Peer
         sockaddr_in sockaddr;                                               // this peer's socket address
         PeerClient(std::string peer_id_str, std::string ip_addr, int port); // overload for dictionary mode
         PeerClient(uint32_t ip_addr, uint16_t port);                        // overload for binary mode
+        PeerClient();                                                       // for incoming connections, we don't need addr info
         std::string to_string();
     };
 
