@@ -146,7 +146,12 @@ namespace File
 		// Interpret a buffer as a piece message, then write its contents to the representing piece struct
 		// and its data field. This function will not write unless the provided block stays within the piece
 		// size bounds.
+		// This function is used when leeching
 		void write_block(Messages::Buffer *buff);
+
+		// Return a piece message formatted into the buffer
+		// This function is used when seeding
+		Messages::Buffer *get_piece(uint32_t index, uint32_t begin, uint32_t length);
 	};
 
 	// TODO: finish this

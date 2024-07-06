@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <queue>
 
 #include <argparse/argparse.hpp>
 
@@ -28,7 +29,8 @@ int main(int argc, char *argv[])
     std::string client_id;
     int port;
     int timeout;
-    int request_queue_size;
+    int outgoing_request_queue_size;
+    int incoming_request_queue_size;
     int listen_queue_size;
 
     int newfd;
@@ -40,7 +42,8 @@ int main(int argc, char *argv[])
     program.add_argument("-id").default_value("EZ6969").store_into(client_id);
     program.add_argument("-p").default_value(6881).store_into(port);
     program.add_argument("-t").default_value(120 * 1000).store_into(timeout); // default timeout to 2 minutes
-    program.add_argument("-q").default_value(10).store_into(request_queue_size);
+    program.add_argument("-oq").default_value(10).store_into(outgoing_request_queue_size);
+    program.add_argument("-iq").default_value(30).store_into(incoming_request_queue_size);
     program.add_argument("-lq").default_value(20).store_into(listen_queue_size);
 
     try
@@ -62,15 +65,18 @@ int main(int argc, char *argv[])
     tracker.send_http();
     tracker.recv_http();
 
+    // request queue for seeding
+    std::queue<File::Block> requests;
+
     // get all base peers from the tracker
     std::vector<Peer::PeerClient> peers = tracker.peers;
 
     // remove this client from the peers list
     // we assume that the peers list contains peers that do not include ourselves
-    peers.erase(std::remove_if(peers.begin(), peers.end(), [&] (Peer::PeerClient peer) { 
-        return peer.sockaddr.sin_addr.s_addr == self_addr.sin_addr.s_addr && 
-                peer.sockaddr.sin_port == self_addr.sin_port; 
-    }), peers.end());
+    peers.erase(std::remove_if(peers.begin(), peers.end(), [&](Peer::PeerClient peer)
+                               { return peer.sockaddr.sin_addr.s_addr == self_addr.sin_addr.s_addr &&
+                                        peer.sockaddr.sin_port == self_addr.sin_port; }),
+                peers.end());
 
     std::cout << "Got: " << peers.size() << " peers " << std::endl;
 
@@ -113,10 +119,6 @@ int main(int argc, char *argv[])
             std::cout << "Nonblocking connect failed" << std::endl;
             std::cout << strerror(errno) << std::endl;
         }
-    }
-
-    for(Peer::PeerClient peer: peers) {
-        std::cout << peer.socket << std::endl;
     }
 
     // main poll event loop
@@ -205,8 +207,8 @@ int main(int argc, char *argv[])
                             torrent.update_block_queue();
                         }
 
-                        // send at most request_queue_size requests
-                        while (!torrent.block_queue.empty() && peers[peer_idx].outgoing_requests < request_queue_size)
+                        // send at most outgoing_request_queue_size requests
+                        while (!torrent.block_queue.empty() && peers[peer_idx].outgoing_requests < outgoing_request_queue_size)
                         {
                             File::Block block = torrent.block_queue.front();
                             Messages::Request request = Messages::Request(block.index, block.begin, block.length);
@@ -221,6 +223,31 @@ int main(int argc, char *argv[])
                             torrent.block_queue.pop();
                         }
                     }
+                }
+
+                else if (requests.size() < outgoing_request_queue_size && peers[peer_idx].am_choking)
+                {
+                    Messages::Unchoke unchoke_msg = Messages::Unchoke();
+                    Messages::Buffer *buff = unchoke_msg.pack();
+
+                    uint32_t remaining_bytes = buff->total_length;
+                    assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+
+                    delete buff;
+                    peers[peer_idx].am_choking = false;
+                    std::cout << "sent unchoke" << std::endl;
+                }
+
+                else if (requests.size() >= outgoing_request_queue_size && !peers[peer_idx].am_choking) {
+                    Messages::Choke choke_msg = Messages::Choke();
+                    Messages::Buffer *buff = choke_msg.pack();
+
+                    uint32_t remaining_bytes = buff->total_length;
+                    assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+
+                    delete buff;
+                    peers[peer_idx].am_choking = true;
+                    std::cout << "sent choke" << std::endl;
                 }
 
                 // if peer refuses/resets the connection,
@@ -238,6 +265,8 @@ int main(int argc, char *argv[])
                     std::cout << strerror(error) << std::endl;
                     pfds[i].fd = -1;
                 }
+
+                
             }
 
             // check if new connections can be made
@@ -249,18 +278,12 @@ int main(int argc, char *argv[])
                 // add the new connection to our list
                 if (newfd != -1)
                 {
-                    // set their socket to be non blocking
                     pfds.push_back(pollfd());
                     pfds[pfds.size() - 1].fd = newfd;
                     pfds[pfds.size() - 1].events = POLLIN | POLLOUT;
                     // add a new peer object
                     peers.push_back(Peer::PeerClient());
                     peers[peers.size() - 1].socket = newfd;
-
-                    for(Peer::PeerClient peer: peers) {
-                        std::cout << peer.socket << std::endl;
-                    }
-
                 }
             }
 
@@ -368,20 +391,29 @@ int main(int argc, char *argv[])
                     // if no handshake yet, then this must be a handshake message
                     if (!peers[peer_idx].recv_shake)
                     {
-
-
                         Messages::Handshake peer_handshake = Messages::Handshake(peers[peer_idx].buffer);
                         peers[peer_idx].recv_shake = true;
                         peers[peer_idx].peer_id = peer_handshake.get_peer_id();
                         std::cout << "Handshake: " << peer_handshake.get_peer_id() << std::endl;
 
                         // if info hash does not match, then we need to close
-                        if(peer_handshake.get_info_hash() != info_hash) {
+                        if (peer_handshake.get_info_hash() != info_hash)
+                        {
                             pfds[peer_idx].fd = -1;
                             peers[peer_idx].recv_shake = false;
                             close(pfds[peer_idx].fd);
-
                             std::cout << "Handshake failed" << std::endl;
+                        }
+
+                        // on successful handshake, send our bitfield if we have pieces
+                        else if (torrent.piece_bitfield->first_unflipped() != 0){
+                            Messages::Buffer *buff = torrent.piece_bitfield->pack();
+                            // send the buffer over the wire
+                            uint32_t remaining_bytes = buff->total_length;
+                            assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+                            delete buff;
+
+                            std::cout << "sent bitfield" << std::endl;
                         }
                     }
 
@@ -430,11 +462,21 @@ int main(int argc, char *argv[])
                             break;
                         }
 
+                        // Upon request, serve the piece to the client
                         case Messages::REQUEST_ID:
                         {
                             std::cout << "got request" << std::endl;
+                            // parse buffer
+                            Messages::Request req = Messages::Request(peers[peer_idx].buffer);
+                            Messages::Buffer *buff = torrent.get_piece(req.length, req.begin, req.length);
+                            // send the buffer over the wire
+                            uint32_t remaining_bytes = buff->total_length;
+                            assert(sendall(pfds[i].fd, (buff->ptr).get(), &remaining_bytes) >= 0);
+                            delete buff;
                             break;
                         }
+
+                        // Upon getting a piece, parse and write the data to our output
                         case Messages::PIECE_ID:
                         {
                             peers[peer_idx].outgoing_requests--;

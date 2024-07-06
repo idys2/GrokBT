@@ -289,11 +289,10 @@ namespace Messages
     // A request message in the bittorrent protocol
     class Request : public BaseMessage
     {
-    private:
+    public:
         uint32_t index;  // piece index that is being requested
         uint32_t begin;  // byte offset that the requested block is for
         uint32_t length; // how long the block being requested is
-    public:
         Request(uint32_t index, uint32_t begin, uint32_t length) : BaseMessage(REQUEST_LENGTH, REQUEST_ID)
         {
             this->index = index;

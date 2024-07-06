@@ -100,19 +100,21 @@ namespace File
 
     Messages::Buffer *BitField::pack()
     {
-        uint32_t len = num_bits + sizeof(Messages::BITFIELD_ID);
-        Messages::Buffer *buff = new Messages::Buffer(len + 1);
+        uint32_t len = bits.size() + sizeof(Messages::BITFIELD_ID);
+        Messages::Buffer *buff = new Messages::Buffer((uint32_t) (len + sizeof(len)));
 
         int idx = 0;
+
         // pack len and idx
-        memcpy(buff->ptr.get() + idx, &len, sizeof(len));
-        idx += sizeof(len);
+        uint32_t big_endian_len = htonl(len);
+        memcpy(buff->ptr.get() + idx, &big_endian_len, sizeof(big_endian_len));
+        idx += sizeof(big_endian_len);
 
         memcpy(buff->ptr.get() + idx, &Messages::BITFIELD_ID, sizeof(Messages::BITFIELD_ID));
         idx += sizeof(Messages::BITFIELD_ID);
 
         // pack bitfield
-        memcpy(buff->ptr.get() + idx, bits.data(), sizeof(bits.size()));
+        memcpy(buff->ptr.get() + idx, bits.data(), bits.size());
 
         return buff;
     }
@@ -290,8 +292,6 @@ namespace File
                     out_stream.write(reinterpret_cast<char *>(piece_vec[index].data.get()), piece_vec[index].piece_size);
 
                     // free the piece data from memory
-                    // piece_vec[index].data.reset();
-
                 }
             }
         }
@@ -300,5 +300,35 @@ namespace File
         {
             std::cout << "invalid block" << std::endl;
         }
+    }
+
+
+    Messages::Buffer *SingleFileTorrent::get_piece(uint32_t index, uint32_t begin, uint32_t length)
+    {
+        uint32_t len = length + sizeof(index) + sizeof(begin) + sizeof(Messages::PIECE_ID);
+        Messages::Buffer *buff = new Messages::Buffer((uint32_t) (len + sizeof(len)));
+
+        int idx = 0;
+
+        // pack len and idx
+        uint32_t big_endian_len = htonl(len);
+        memcpy(buff->ptr.get() + idx, &big_endian_len, sizeof(big_endian_len));
+        idx += sizeof(big_endian_len);
+
+        memcpy(buff->ptr.get() + idx, &Messages::PIECE_ID, sizeof(Messages::PIECE_ID));
+        idx += sizeof(Messages::PIECE_ID);
+
+        // pack index and begin, note that these must be in network endian
+        uint32_t big_endian_index = htonl(index);
+        memcpy(buff->ptr.get() + idx, &big_endian_index, sizeof(big_endian_index));
+        idx += sizeof(big_endian_index);
+
+        uint32_t big_endian_begin = htonl(begin);
+        memcpy(buff->ptr.get() + idx, &big_endian_begin, sizeof(big_endian_begin));
+        idx += sizeof(big_endian_begin);    
+
+        memcpy(buff->ptr.get() + idx, piece_vec[index].data.get() + begin, length);
+
+        return buff;
     }
 }
