@@ -1,13 +1,11 @@
 # BitTorrent
 
-This is a C++ implementation of a command line bittorrent protocol. The goal is to write as much from scratch as possible, so we only use the following libraries in the following ways: s
+A bittorrent client made to...grok bittorrent. And C++! 
 
 - bencode.hpp to bencode/bdecode torrent files 
 - libcurl to manipulate url strings 
 - openssl for SHA1 hashing
 - argparse to handle command line arguments
-
-All other parts of the BitTorrent protocol are from scratch.
 
 ## File Structure
 - ```include``` folder holds all header files (.h)
@@ -24,5 +22,3 @@ make
 ```
 
 ## TODO 
-- Get tracker HTTP request working again 
-- Figure out non blocking socket logic
