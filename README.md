@@ -18,7 +18,7 @@ mkdir build
 cd build 
 cmake ..  
 make
-./client
+./torrent
 ```
 
 ## TODO 
