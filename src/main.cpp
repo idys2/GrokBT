@@ -12,13 +12,13 @@
 
 #include <argparse/argparse.hpp>
 
-#include "client.h"
-#include "peer.h"
-#include "message.h"
-#include "metainfo.h"
-#include "tracker_protocol.h"
-#include "net_utils.h"
-#include "file.h"
+#include "client.hpp"
+#include "peer.hpp"
+#include "message.hpp"
+#include "metainfo.hpp"
+#include "tracker_protocol.hpp"
+#include "net_utils.hpp"
+#include "file.hpp"
 #include "hash.h"
 
 int main(int argc, char *argv[])
@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
     socklen_t addrlen;
     sockaddr_in self_addr;
 
-    program.add_argument("-f").default_value("debian1.torrent").store_into(torrent_file);
+    program.add_argument("-f").default_value("../torrents/debian1.torrent").store_into(torrent_file);
     program.add_argument("-id").default_value("EZ6969").store_into(client_id);
     program.add_argument("-p").default_value(6881).store_into(port);
     program.add_argument("-t").default_value(120 * 1000).store_into(timeout); // default timeout to 2 minutes
