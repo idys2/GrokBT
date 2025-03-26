@@ -22,3 +22,9 @@ make
 ```
 
 ## TODO 
+- Close client after verifying hash of torrented file
+
+## Sources
+https://wiki.theory.org/BitTorrentSpecification
+
+https://www.bittorrent.org/beps/bep_0003.html
