@@ -1,4 +1,4 @@
-#include "message.h"
+#include "message.hpp"
 
 namespace Messages
 {   

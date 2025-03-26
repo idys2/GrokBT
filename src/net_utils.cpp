@@ -1,4 +1,4 @@
-#include "net_utils.h"
+#include "net_utils.hpp"
 
 #include <iostream>
 int sendall(int s, const char *buf, uint32_t *len) {
@@ -110,7 +110,7 @@ sockaddr_in get_self_sockaddr(int port)
 
     sockaddr_in ret;
 
-    if ((status = getaddrinfo(ipstr, std::to_string(port).c_str(), &hints, &res)) != 0) {
+    if ((status = getaddrinfo(NULL, std::to_string(port).c_str(), &hints, &res)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
     }
 

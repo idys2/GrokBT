@@ -1,5 +1,5 @@
-#ifndef METAINFO_H
-#define METAINFO_H
+#ifndef METAINFO_HPP
+#define METAINFO_HPP
 #include <string>
 #include <fstream>
 #include <stdio.h>
@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #include "hash.h"
-#include "bencode_wrapper.hpp"
+#include "bencode.hpp"
 
 namespace Metainfo
 {

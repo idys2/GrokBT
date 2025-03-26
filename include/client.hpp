@@ -1,5 +1,5 @@
-#ifndef CLIENT_H
-#define CLIENT_H
+#ifndef CLIENT_HPP
+#define CLIENT_HPP
 
 #include <string>
 #include <fstream>
@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #include "hash.h"
-#include "bencode_wrapper.hpp"
+#include "bencode.hpp"
 
 namespace Client {
 

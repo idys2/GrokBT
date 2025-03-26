@@ -1,4 +1,4 @@
-#include "metainfo.h"
+#include "metainfo.hpp"
 
 namespace Metainfo
 {

@@ -1,13 +1,13 @@
-#ifndef TRACKER_PROTOCOL_H
-#define TRACKER_PROTOCOL_H
+#ifndef TRACKER_PROTOCOL_HPP
+#define TRACKER_PROTOCOL_HPP
 
 #include <string>
 #include <curl/curl.h>
 
-#include "bencode_wrapper.hpp"
-#include "peer.h"
-#include "metainfo.h"
-#include "net_utils.h"
+#include "bencode.hpp"
+#include "peer.hpp"
+#include "metainfo.hpp"
+#include "net_utils.hpp"
 
 namespace TrackerProtocol {
     const int HTTP_HEADER_MAX_SIZE = 10 * 1024; // set an arbitrary maximum size for an HTTP header from tracker

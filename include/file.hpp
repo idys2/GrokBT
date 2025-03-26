@@ -1,5 +1,5 @@
-#ifndef FILE_H
-#define FILE_H
+#ifndef FILE_HPP
+#define FILE_HPP
 
 #include <vector>
 #include <string>
@@ -8,9 +8,9 @@
 #include <fstream>
 #include <cmath>
 
-#include "message.h"
+#include "message.hpp"
 #include "hash.h"
-#include "bencode_wrapper.hpp"
+#include "bencode.hpp"
 
 namespace File
 {

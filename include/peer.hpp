@@ -7,8 +7,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#include "message.h"
-#include "file.h"
+#include "message.hpp"
+#include "file.hpp"
 
 namespace Peer
 {

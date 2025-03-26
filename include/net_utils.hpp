@@ -1,12 +1,12 @@
-#ifndef NET_UTILS_H
-#define NET_UTILS_H
+#ifndef NET_UTILS_HPP
+#define NET_UTILS_HPP
 
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include <string>
 #include <unistd.h>
-#include <assert.h> 
+#include <assert.h>
+#include <string>
 
 int sendall(int s, const char *buf, uint32_t *len);
 int sendall(int s, uint8_t *buf, uint32_t *len);

@@ -1,4 +1,4 @@
-#include "tracker_protocol.h"
+#include "tracker_protocol.hpp"
 
 namespace TrackerProtocol
 {
@@ -27,7 +27,7 @@ namespace TrackerProtocol
         addrinfo *servinfo;
         memset(&hints, 0, sizeof hints);
 
-        hints.ai_family = AF_UNSPEC;
+        hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags = AI_PASSIVE;
 
@@ -70,8 +70,12 @@ namespace TrackerProtocol
         sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         assert(sock >= 0);
 
-        int connected = connect(sock, (sockaddr *)&tracker_addr, sizeof(sockaddr_in));
-        assert(connected >= 0);
+        if (connect(sock, (sockaddr *) &tracker_addr, sizeof(sockaddr_in)) < 0)
+        {
+            std::cerr << "Failed to connect to tracker" << std::endl;
+            std::cerr << strerror(errno) << std::endl;
+            exit(1);
+        }
 
         sent_completed = false;
     }
